@@ -1,0 +1,3191 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AFBE（Formation Battle Encounter）</title>
+<style>
+  :root {
+    --bg: #1b1e24;
+    --panel: #252932;
+    --panel-border: #3a4050;
+    --text: #e8e8ee;
+    --text-dim: #9aa0ac;
+    --p1: #4a90d9;
+    --p1-dark: #2c5a8a;
+    --p2: #d9574a;
+    --p2-dark: #8a2c2c;
+    --wall: #14161a;
+    --wall-edge: #3a3e46;
+    --empty-p1: #2a3542;
+    --empty-p2: #3f2a2a;
+    --empty-neutral: #2f3238;
+    --grid-line: #454b58;
+    --accent: #ffd479;
+    --accent-dim: #a3812e;
+    --ok: #4ade80;
+    /* [UI 2026-09-05] キャラカードのステータス表記（目盛りバー）用 */
+    --stat-hp: #e2685f;
+    --stat-hp-dark: #8f3a34;
+    --stat-ap: #57c2d9;
+    --stat-ap-dark: #2f6b78;
+    --stat-atk: #ffd479;
+    --stat-atk-dark: #a3812e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Yu Gothic", "Meiryo", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+  }
+  h1 {
+    font-size: 1.3em;
+    margin: 0 0 4px 0;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 0.85em;
+    margin-bottom: 12px;
+  }
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  /* ==================== 配置画面・戦闘画面（2026-08-22: 画面分割） ==================== */
+  .screen-view {
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .dev-toggle-wrap { padding: 10px 10px 0; }
+  .dev-toggle-btn {
+    background: none; border: 1px solid var(--panel-border); color: var(--text-faint);
+    font-size: 0.76em; border-radius: 6px; padding: 4px 10px;
+  }
+  .dev-toggle-btn:hover { color: var(--text-dim); background: var(--panel-border); }
+  .dev-collapse { margin-top: 10px; }
+  .dev-collapse .panel { width: auto; max-width: 320px; }
+
+  .placement-topbar {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 10px 20px; border-bottom: 1px solid var(--panel-border); background: var(--panel);
+  }
+  .round-pill {
+    font-size: 0.8em; color: var(--text-dim); background: var(--bg); border: 1px solid var(--panel-border);
+    border-radius: 999px; padding: 4px 12px;
+  }
+  .round-pill strong { color: var(--accent); }
+  .placement-status-msg { min-height: 1.2em; font-size: 0.82em; color: var(--accent); flex: 1; text-align: right; }
+
+  /* ==================== 配置画面 v2（2026-08-23: 盤面中心・上下横帯レイアウト） ==================== */
+  .base-hp-group { display: flex; align-items: center; gap: 12px; }
+  .base-hp { display: flex; align-items: center; gap: 6px; font-size: 0.78em; }
+  .base-hp .label { font-weight: 600; }
+  .base-hp.p1 .label { color: var(--p1); }
+  .base-hp.p2 .label { color: var(--p2); }
+  .base-hp .bar { width: 64px; height: 6px; border-radius: 3px; background: var(--bg); overflow: hidden; border: 1px solid var(--panel-border); }
+  .base-hp .bar > i { display: block; height: 100%; }
+  .base-hp.p1 .bar > i { background: linear-gradient(90deg, var(--p1-dark), var(--p1)); }
+  .base-hp.p2 .bar > i { background: linear-gradient(90deg, var(--p2-dark), var(--p2)); }
+  .base-hp .n { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .credits-pill {
+    font-size: 0.84em; background: var(--bg); border: 1px solid var(--panel-border); border-radius: 999px;
+    padding: 5px 14px; flex-shrink: 0;
+  }
+  .credits-pill .amt { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .strip {
+    padding: 10px 16px; border-bottom: 1px solid var(--panel-border); background: var(--panel);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .strip-label {
+    font-size: 0.72em; letter-spacing: 0.06em; color: var(--text-faint); text-transform: uppercase;
+    flex-shrink: 0; width: 56px;
+  }
+  .strip-track { flex: 1; display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+  .strip-empty { font-size: 0.8em; color: var(--text-faint); padding: 6px 0; }
+
+  .hcard {
+    flex-shrink: 0; width: 168px; background: var(--bg); border: 1px solid var(--panel-border); border-radius: 9px;
+    cursor: pointer; position: relative; overflow: hidden;
+  }
+  .hcard:hover { border-color: #555c6d; }
+  .hcard.unaffordable { opacity: 0.45; cursor: default; }
+  /* [UI 2026-09-02] キャラアイコンが小さくて見づらいとの指摘を受け、カード上部いっぱいの
+     ポートレート型バナーに変更（旧: 24px角の小アイコン＋名前を横並び）。 */
+  .h-banner {
+    position: relative; width: 100%; height: 128px; display: flex; align-items: center; justify-content: center;
+    font-size: 2.4em; font-weight: 700; color: #fff; background: linear-gradient(160deg, var(--p1), var(--p1-dark));
+    overflow: hidden;
+  }
+  /* [UI 2026-08-25] キャラ画像（UC用意）。images/chars/<charId>.png が無ければ読み込み失敗時に
+     JS側でdisplay:noneにして、下の文字アイコン（既存のCHAR_ICON）にフォールバックする */
+  .h-icon-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  /* [UI 2026-09-06] キャラカード・アイコンの背景をP1/P2で色分け（UC要望「赤の陣地のプレイヤーの
+     キャラの背景は赤にして」）。既定（クラス無し）はP1の青のまま、.p2を付けた時だけ赤に切り替える */
+  .h-banner.p2, .h-icon.p2 { background: linear-gradient(160deg, var(--p2), var(--p2-dark)); }
+  .h-body { padding: 8px 10px 9px; }
+  /* [2026-08-25] .hcardの外（.inspector-who配下）でも効くよう、位置決め用のposition:relativeは
+     .hcard有無に関わらず効く共通ルールにしてある。 */
+  .h-icon {
+    width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 0.64em; font-weight: 700; color: #fff; background: linear-gradient(160deg, var(--p1), var(--p1-dark));
+    position: relative; overflow: hidden;
+  }
+  .hcard .h-name { font-size: 0.8em; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hcard .h-price {
+    position: absolute; top: 8px; right: 8px; font-size: 0.72em; color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 700;
+    background: rgba(20,22,27,0.72); border-radius: 999px; padding: 2px 8px;
+  }
+  /* [UI 2026-09-05] ステータスを平行四辺形の目盛りバーで表示（UC提示の参考画像に準拠）。
+     目盛り数は全キャラ中の最大値を満タンとした相対値なので、キャラ間で強さの比較がしやすい */
+  .stat-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .stat-row .stat-label { font-size: 0.62em; color: var(--text-dim); width: 3.1em; flex-shrink: 0; white-space: nowrap; letter-spacing: 0.01em; }
+  .stat-seg-track { display: flex; gap: 2px; }
+  .stat-seg { width: 8px; height: 6px; border-radius: 1px; transform: skewX(-18deg); background: var(--panel-border); opacity: 0.5; }
+  .stat-seg.on.hp { background: linear-gradient(90deg, var(--stat-hp-dark), var(--stat-hp)); opacity: 1; }
+  .stat-seg.on.ap { background: linear-gradient(90deg, var(--stat-ap-dark), var(--stat-ap)); opacity: 1; }
+  .stat-seg.on.atk { background: linear-gradient(90deg, var(--stat-atk-dark), var(--stat-atk)); opacity: 1; }
+  .stat-row .stat-value { font-size: 0.64em; color: var(--text-dim); font-variant-numeric: tabular-nums; margin-left: 1px; }
+  .skill-pills { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+  .skill-pill {
+    font-size: 0.64em; line-height: 1.4; color: var(--text); background: rgba(255,212,121,0.1);
+    border: 1px solid rgba(255,212,121,0.25); border-radius: 5px; padding: 2px 6px; white-space: normal;
+  }
+  .skill-pill.none { color: var(--text-faint); background: var(--panel); border-color: var(--panel-border); }
+  .skill-pill.upgrade-hint { color: var(--accent); background: transparent; border-color: var(--accent); }
+  .hcard.queued {
+    border: 1px solid var(--accent); background: rgba(255,212,121,0.1);
+    box-shadow: 0 0 0 1px rgba(255,212,121,0.2);
+  }
+  .hcard.queued .h-hint { font-size: 0.66em; color: var(--accent); margin-top: 3px; font-weight: 600; }
+  .h-return-btn {
+    display: block; width: 100%; margin-top: 6px; font-family: inherit; font-size: 0.66em; font-weight: 600;
+    color: var(--text-dim); background: var(--bg); border: 1px solid var(--panel-border); border-radius: 5px;
+    padding: 3px 0; cursor: pointer;
+  }
+  .h-return-btn:hover { color: #ff9b9b; border-color: #ff9b9b; }
+  .hcard.queued .h-badge {
+    position: absolute; top: 8px; right: 8px; font-size: 0.6em; font-weight: 700; letter-spacing: 0.02em;
+    color: #2a2110; background: var(--accent); border-radius: 999px; padding: 2px 7px;
+  }
+  .hcard.placed { opacity: 0.55; border-style: dashed; }
+  .hcard.placed:hover { opacity: 0.85; border-color: #555c6d; }
+  .hcard.placed .h-hint { font-size: 0.66em; color: var(--text-faint); margin-top: 3px; }
+  .hcard.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; opacity: 1; }
+  .strip-divider { width: 1px; align-self: stretch; background: var(--panel-border); flex-shrink: 0; margin: 0 2px; }
+
+  /* [UI 2026-09-05] 購入UIを下段の横スクロール帯からポップアップに変更。
+     未選択時は盤面下にこのボタンだけを置き、押すとキャラ購入モーダルを開く */
+  /* [UI 2026-09-05] 購入ボタンを下段中央から上部バー（残クレジットの隣）へ移動。
+     いつでも押せるよう常時表示にし、下段はユニット選択時の指示パネル専用にした */
+  .shop-cta-topbar {
+    font-family: inherit; font-size: 0.84em; font-weight: 700; color: var(--accent-ink, #2a2110);
+    background: var(--accent); border: none; border-radius: 999px; padding: 6px 16px; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(255,212,121,0.25); white-space: nowrap;
+  }
+  .shop-cta-topbar:hover { filter: brightness(1.05); }
+  #readyRow { align-items: center; gap: 10px; } /* [UI 2026-09-05] 配置完了は残クレジットとHPバーの間に配置 */
+
+  .scrim {
+    position: fixed; inset: 0; background: rgba(10,11,14,0.72); backdrop-filter: blur(2px);
+    display: none; align-items: center; justify-content: center; z-index: 40; padding: 24px;
+  }
+  .scrim.open { display: flex; }
+  .shop-modal {
+    width: min(720px, 100%); max-height: 86vh; overflow: hidden; display: flex; flex-direction: column;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  }
+  .shop-modal-head {
+    display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--panel-border);
+  }
+  .shop-modal-head h2 { margin: 0; font-size: 1.05em; }
+  .shop-modal-head .credits-pill { margin-left: auto; }
+  .shop-modal-close {
+    font-family: inherit; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--panel-border);
+    background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 1em; line-height: 1;
+  }
+  .shop-modal-close:hover { color: var(--text); background: var(--panel-border); }
+  .shop-grid {
+    padding: 16px 18px 20px; overflow-y: auto;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px;
+  }
+  .shop-grid .hcard { width: auto; }
+
+  /* [UI 2026-09-05] 試合終了ポップアップ（勝利/敗北/引き分け）。UC要望により再戦・ホームに戻るを併設 */
+  .match-result-modal {
+    width: min(360px, 100%); text-align: center; padding: 36px 28px 28px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  }
+  .match-result-title { font-size: 2.1em; font-weight: 800; letter-spacing: 0.04em; margin-bottom: 8px; }
+  .match-result-modal.win .match-result-title { color: var(--accent); text-shadow: 0 0 24px rgba(255,212,121,0.5); }
+  .match-result-modal.lose .match-result-title { color: #ef8b6c; }
+  .match-result-modal.draw .match-result-title { color: var(--text-dim); }
+  .match-result-sub { font-size: 0.86em; color: var(--text-dim); margin-bottom: 24px; }
+  .match-result-actions { display: flex; flex-direction: column; gap: 10px; }
+  .match-result-actions .btn-primary-lg { width: 100%; }
+  .match-result-actions .close-btn { width: 100%; }
+
+  .col-board { display: flex; align-items: center; justify-content: center; padding: 16px; overflow: auto;
+    background: radial-gradient(ellipse 90% 60% at 50% 4%, rgba(74,144,217,0.05), transparent 55%); }
+
+  .inspector-strip {
+    padding: 10px 16px; border-top: 1px solid var(--panel-border); background: var(--panel);
+  }
+  .inspector-strip #unitEditContent { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .inspector-who { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .inspector-who .h-icon { width: 52px; height: 52px; border-radius: 10px; font-size: 1.15em; }
+  .inspector-who .meta { font-size: 0.76em; }
+  .inspector-who .meta .n { font-weight: 700; }
+  .inspector-who .meta .p { color: var(--text-faint); }
+  .purpose-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .purpose-chip {
+    display: flex; align-items: center; gap: 5px; padding: 7px 11px; border-radius: 999px; border: 1px solid var(--panel-border);
+    background: var(--bg); font-size: 0.76em; color: var(--text-dim); cursor: pointer; white-space: nowrap; font-family: inherit;
+  }
+  .purpose-chip.active { border-color: var(--accent); color: var(--accent); background: rgba(255,212,121,0.08); }
+  .facing-row { display: flex; gap: 4px; }
+  .facing-row button {
+    width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--panel-border); background: var(--bg);
+    color: var(--text-dim); cursor: pointer; font-size: 0.85em; padding: 0;
+  }
+  .facing-row button.active { border-color: var(--accent); color: var(--accent); }
+  .inspector-spacer { flex: 1; }
+  .close-btn {
+    background: none; border: 1px solid #555c6d; color: var(--text-dim); border-radius: 6px; padding: 6px 12px;
+    font-size: 0.78em; cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  .close-btn:hover { color: var(--text); }
+
+  .placement-actionbar {
+    display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+    padding: 14px 20px; border-top: 1px solid var(--panel-border); background: var(--panel);
+  }
+  .btn-primary-lg {
+    background: linear-gradient(180deg, #ffe1a0, var(--accent)); color: #2a1e05; border: none;
+    font-weight: 700; padding: 10px 22px; font-size: 0.9em; border-radius: 8px;
+  }
+  .btn-primary-lg:hover { filter: brightness(1.06); background: linear-gradient(180deg, #ffe1a0, var(--accent)); }
+  .btn-primary-lg:disabled { opacity: 0.5; cursor: default; filter: none; }
+
+  .battle-topbar { padding: 12px 20px; border-bottom: 1px solid var(--panel-border); background: var(--panel); }
+  .battle-topbar h2 { margin: 0; font-size: 1em; color: var(--text); }
+  .battle-body { display: grid; grid-template-columns: 1fr 300px; }
+  .battle-board-col {
+    display: flex; align-items: center; justify-content: center; padding: 20px; overflow: auto;
+    background: radial-gradient(ellipse 90% 60% at 50% 10%, rgba(74,144,217,0.06), transparent 60%);
+  }
+  .battle-side { border-left: 1px solid var(--panel-border); border-radius: 0; width: auto; max-height: 680px; overflow: auto; }
+
+  @media (max-width: 900px) {
+    .strip { flex-direction: column; align-items: stretch; }
+    .strip-label { width: auto; }
+    .battle-body { grid-template-columns: 1fr; }
+    .battle-side { border: none; border-top: 1px solid var(--panel-border); max-height: none; }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .controls {
+    width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .controls h2 {
+    font-size: 0.95em;
+    margin: 0 0 6px 0;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 4px;
+  }
+  .radio-group label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    cursor: pointer;
+    font-size: 0.9em;
+  }
+  .badge {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+  .badge.p1 { background: var(--p1); }
+  .badge.p2 { background: var(--p2); }
+  .status-line {
+    font-size: 0.85em;
+    line-height: 1.6;
+  }
+  button {
+    background: var(--panel-border);
+    color: var(--text);
+    border: 1px solid #555c6d;
+    border-radius: 5px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.85em;
+  }
+  button:hover { background: #454b58; }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+  }
+  #statusMsg {
+    min-height: 1.4em;
+    font-size: 0.82em;
+    color: #ffd479;
+  }
+  .legend {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.8em;
+    color: var(--text-dim);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    border: 1px solid var(--grid-line);
+  }
+  .hex-clickable { cursor: pointer; }
+  .hex-clickable:hover { stroke: #fff; stroke-width: 1.5; }
+  svg text.coord-label {
+    fill: var(--text-dim);
+    font-size: 9px;
+    pointer-events: none;
+    user-select: none;
+  }
+  svg text.axis-label {
+    fill: var(--text-dim);
+    font-size: 10px;
+    pointer-events: none;
+    user-select: none;
+  }
+  #battleLogFeed {
+    height: 220px;
+    overflow-y: auto;
+    font-size: 0.72em;
+    color: var(--text-dim);
+    border: 1px solid var(--panel-border);
+    border-radius: 5px;
+    padding: 4px 6px;
+    line-height: 1.5;
+  }
+  .speed-btn.active { border-color: #ffd479; color: #ffd479; }
+  @keyframes floatUp {
+    0% { transform: translateY(0); opacity: 1; }
+    100% { transform: translateY(-20px); opacity: 0; }
+  }
+  .dmg-float { animation: floatUp 0.9s ease-out forwards; pointer-events: none; }
+  @keyframes atkFlash {
+    0% { opacity: 0.9; }
+    100% { opacity: 0; }
+  }
+  .atk-line { animation: atkFlash 0.35s ease-out forwards; pointer-events: none; }
+  @keyframes deathFade {
+    0% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.3); }
+  }
+  .death-fade { animation: deathFade 0.6s ease-in forwards; transform-box: fill-box; transform-origin: center; }
+  #gBattleUnits > g { transition: opacity 0.25s ease; } /* [UI 2026-09-05] 行動力切れによる減光を滑らかに */
+
+  /* ==================== ロビー画面（入口） ==================== */
+  #lobbyScreen { display: flex; justify-content: center; padding: 24px 16px 40px; }
+  .lobby-hexfield {
+    position: relative;
+    width: 100%; max-width: 640px;
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse 120% 90% at 50% -10%, rgba(74,144,217,0.16), transparent 60%),
+      #14171f;
+    padding: 56px 28px 40px;
+    display: flex; flex-direction: column; align-items: center;
+    box-shadow: 0 20px 60px -20px rgba(0,0,0,0.5);
+  }
+  .lobby-hexfield::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='72.7' viewBox='0 0 84 72.7'%3E%3Cpolygon points='21,0 63,0 84,36.35 63,72.7 21,72.7 0,36.35' fill='none' stroke='%232a3040' stroke-width='1'/%3E%3C/svg%3E");
+    background-size: 84px 72.7px;
+    opacity: 0.55;
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 20%, black 0%, transparent 75%);
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 20%, black 0%, transparent 75%);
+    pointer-events: none;
+  }
+  .lobby-state { position: relative; width: 100%; display: flex; flex-direction: column; align-items: center; }
+  .lobby-brand { text-align: center; margin-bottom: 32px; }
+  .lobby-mark {
+    font-size: 2.8em; font-weight: 800; letter-spacing: 0.14em; margin: 0;
+    background: linear-gradient(180deg, #ffe6a8, var(--accent) 55%, var(--accent-dim));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 2px 18px rgba(255,212,121,0.25));
+  }
+  .lobby-full { margin: 6px 0 0; font-size: 0.78em; letter-spacing: 0.24em; color: var(--text-dim); text-transform: uppercase; }
+  .lobby-card, .lobby-room-card {
+    width: 100%; max-width: 420px;
+    background: var(--panel); border: 1px solid #3d4356; border-radius: 14px;
+    padding: 24px 24px 22px;
+  }
+  .lobby-path { background: #20242f; border: 1px solid var(--panel-border); border-radius: 10px; padding: 16px 15px; display: flex; flex-direction: column; gap: 10px; }
+  .lobby-path-title { font-size: 0.82em; color: var(--text-dim); display: flex; align-items: center; gap: 7px; }
+  .lobby-path-icon { width: 20px; height: 20px; border-radius: 5px; display: flex; align-items: center; justify-content: center; background: rgba(255,212,121,0.12); color: var(--accent); font-size: 12px; flex-shrink: 0; }
+  .lobby-btn { appearance: none; border: none; cursor: pointer; border-radius: 8px; padding: 11px 14px; font-size: 0.92em; font-family: inherit; font-weight: 600; transition: filter 0.12s ease; }
+  .lobby-btn:hover { filter: brightness(1.08); }
+  .lobby-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .lobby-btn-primary { background: linear-gradient(180deg, #ffe1a0, var(--accent)); color: #2a1e05; width: 100%; }
+  .lobby-btn-ghost { background: transparent; border: 1px solid #3d4356; color: var(--text); }
+  .lobby-code-input { display: flex; gap: 8px; }
+  .lobby-code-input input {
+    flex: 1; min-width: 0; background: #14171f; border: 1px solid var(--panel-border); border-radius: 8px;
+    color: var(--text); font-family: "SF Mono", "Consolas", monospace; font-size: 1.1em; letter-spacing: 0.3em;
+    text-align: center; padding: 9px 6px 9px 10px; font-variant-numeric: tabular-nums;
+  }
+  .lobby-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: #5c6479; font-size: 0.74em; letter-spacing: 0.08em; }
+  .lobby-divider::before, .lobby-divider::after { content: ""; flex: 1; height: 1px; background: var(--panel-border); }
+  .lobby-dev-skip { margin-top: 22px; background: none; border: none; color: #5c6479; font-size: 0.76em; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .lobby-dev-skip:hover { color: var(--text-dim); }
+  .lobby-room-code-block { text-align: center; margin-bottom: 20px; }
+  .lobby-label { font-size: 0.76em; color: var(--text-dim); letter-spacing: 0.08em; margin-bottom: 4px; }
+  .lobby-code { font-family: "SF Mono", "Consolas", monospace; font-size: 2em; font-weight: 700; letter-spacing: 0.14em; font-variant-numeric: tabular-nums; }
+  .lobby-vs-row { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .lobby-side { flex: 1; background: #20242f; border: 1px solid var(--panel-border); border-radius: 10px; padding: 13px 14px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .lobby-side.p1 { border-left: 3px solid var(--p1); }
+  .lobby-side.p2 { border-left: 3px solid var(--p2); }
+  .lobby-avatar { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.8em; color: #fff; flex-shrink: 0; }
+  .lobby-side.p1 .lobby-avatar { background: linear-gradient(160deg, var(--p1), var(--p1-dark)); }
+  .lobby-side.p2 .lobby-avatar { background: linear-gradient(160deg, var(--p2), var(--p2-dark)); }
+  .lobby-who { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .lobby-name { font-size: 0.84em; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lobby-status { font-size: 0.74em; display: flex; align-items: center; gap: 5px; }
+  .lobby-status .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .lobby-status.online { color: var(--ok); }
+  .lobby-status.online .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(74,222,128,0.18); }
+  .lobby-status.waiting { color: #5c6479; }
+  .lobby-status.waiting .dot { background: #5c6479; }
+  .lobby-vs-mark { font-size: 0.7em; color: #5c6479; letter-spacing: 0.08em; flex-shrink: 0; }
+  .lobby-waiting-line { text-align: center; font-size: 0.8em; color: #5c6479; margin-bottom: 16px; }
+  .lobby-room-actions { display: flex; gap: 10px; }
+  .lobby-matched-badge { font-size: 1.1em; font-weight: 700; color: var(--ok); margin-bottom: 6px; }
+  .lobby-matched-sub { color: var(--text-dim); font-size: 0.86em; }
+  .lobby-msg { margin-top: 16px; color: var(--accent); font-size: 0.85em; min-height: 1.2em; text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="lobbyScreen">
+  <div class="lobby-hexfield">
+
+    <div id="lobbyStateA" class="lobby-state">
+      <div class="lobby-brand">
+        <p class="lobby-mark">AFBE</p>
+        <p class="lobby-full">Formation Battle Encounter</p>
+      </div>
+      <div class="lobby-card">
+        <div class="lobby-path">
+          <div class="lobby-path-title"><span class="lobby-path-icon">★</span>ホストになる</div>
+          <button id="createRoomBtn" class="lobby-btn lobby-btn-primary">ルームを作成</button>
+        </div>
+        <div class="lobby-divider">または</div>
+        <div class="lobby-path">
+          <div class="lobby-path-title"><span class="lobby-path-icon">→</span>合言葉で参加</div>
+          <div class="lobby-code-input">
+            <input type="text" id="joinCodeInput" maxlength="4" inputmode="numeric" placeholder="0000">
+            <button id="joinRoomBtn" class="lobby-btn lobby-btn-ghost">参加</button>
+          </div>
+        </div>
+      </div>
+      <button id="devSkipLobbyBtn" class="lobby-dev-skip">開発用: ロビーをスキップしてローカルでテスト</button>
+    </div>
+
+    <div id="lobbyStateB" class="lobby-state" style="display:none;">
+      <div class="lobby-room-card">
+        <div class="lobby-room-code-block">
+          <div class="lobby-label">合言葉</div>
+          <div class="lobby-code" id="roomCodeLabel"></div>
+        </div>
+        <div class="lobby-vs-row">
+          <div class="lobby-side" id="lobbySideMe">
+            <div class="lobby-avatar" id="lobbySideMeAvatar"></div>
+            <div class="lobby-who">
+              <div class="lobby-name">あなた</div>
+              <div class="lobby-status online"><span class="dot"></span>接続済み</div>
+            </div>
+          </div>
+          <div class="lobby-vs-mark">VS</div>
+          <div class="lobby-side" id="lobbySideOpp">
+            <div class="lobby-avatar" id="lobbySideOppAvatar"></div>
+            <div class="lobby-who">
+              <div class="lobby-name">相手</div>
+              <div class="lobby-status waiting" id="opponentStatusRow"><span class="dot"></span><span id="opponentStatusLabel"></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="lobby-waiting-line">相手が揃いしだい、自動的に配置フェイズへ進みます</div>
+        <div class="lobby-room-actions">
+          <button id="leaveRoomBtn" class="lobby-btn lobby-btn-ghost" style="flex:1;">退出</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="lobbyStateC" class="lobby-state" style="display:none;">
+      <div class="lobby-room-card" style="text-align:center;">
+        <div class="lobby-matched-badge">✓ マッチ成立</div>
+        <div class="lobby-matched-sub">配置フェイズへ移動します…</div>
+      </div>
+    </div>
+
+    <div id="lobbyMsg" class="lobby-msg"></div>
+  </div>
+</div>
+
+<div id="pageHeader">
+  <h1>AFBE（Formation Battle Encounter）</h1>
+  <div class="subtitle" id="pageSubtitle">盤面基盤（拠点は固定位置） + 配置フェイズ — キャラ購入・配置 / 指示・向き設定（開発テスト用）</div>
+</div>
+
+<div class="layout" id="layoutRoot" style="display:none;">
+
+  <div id="placementScreen" class="screen-view">
+
+    <div class="dev-toggle-wrap">
+      <button id="devToolsToggleBtn" class="dev-toggle-btn">⚙ 開発用オプション</button>
+      <div id="devToolsCollapse" class="dev-collapse" style="display:none;">
+        <div class="panel controls">
+          <!-- ルーム未参加時はデバッグ用にP1/P2を手動切替できる。ルーム参加後はパネルごと非表示にする -->
+          <div id="playerSelectPanel">
+            <h2>操作プレイヤー（デバッグ用・ルーム未参加時のみ）</h2>
+            <div class="radio-group" id="playerSelect">
+              <label><input type="radio" name="player" value="player1" checked><span class="badge p1"></span>プレイヤー1（row 0〜6側）</label>
+              <label><input type="radio" name="player" value="player2"><span class="badge p2"></span>プレイヤー2（row 12〜18側）</label>
+            </div>
+          </div>
+          <!-- ルーム参加中はまとめて非表示（本番のプレイヤーには不要な開発用ツール） -->
+          <div id="devToolsPanel">
+            <div>
+              <button id="resetBtn">全てリセット（テスト用）</button>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="coordToggle">
+              <label for="coordToggle">マスごとの座標（col,row）を表示</label>
+            </div>
+          </div>
+          <div>
+            <h2>凡例</h2>
+            <div class="legend">
+              <div class="legend-item"><span class="legend-swatch" style="background:var(--empty-p1)"></span>P1側の空きマス</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:var(--empty-p2)"></span>P2側の空きマス</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:var(--empty-neutral)"></span>中立地帯（拠点・自陣不可）</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:var(--wall)"></span>壁マス（移動不可・射線遮断）</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:var(--p1)"></span>P1拠点 / 自陣（半透明）</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:var(--p2)"></span>P2拠点 / 自陣（半透明）</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="placement-topbar">
+      <span class="round-pill">ラウンド <strong id="roundLabel">1</strong> / 4</span>
+      <div class="base-hp-group" id="baseHpGroup"></div>
+      <span id="statusMsg" class="placement-status-msg"></span>
+      <span id="readyRow" style="display:none;">
+        <button id="readyBtn" class="btn-primary-lg">配置完了（準備OK）</button>
+        <span id="readyStatusLabel" class="status-line"></span>
+      </span>
+      <div class="credits-pill">残クレジット <span class="amt" id="creditsLabel"></span></div>
+      <button id="openShopBtn" class="shop-cta-topbar">＋ キャラを購入</button>
+    </div>
+
+    <div class="inspector-strip" id="unitEditPanel" style="display:none;">
+      <div id="unitEditContent"></div>
+    </div>
+
+    <div class="strip top">
+      <span class="strip-label">配置待ち</span>
+      <div class="strip-track" id="queueList"></div>
+    </div>
+
+    <div class="col-board" id="boardSlotPlacement">
+      <svg id="board"></svg>
+    </div>
+
+    <div class="scrim" id="shopScrim">
+      <div class="shop-modal">
+        <div class="shop-modal-head">
+          <h2>キャラを購入</h2>
+          <div class="credits-pill">残クレジット <span class="amt" id="creditsLabelShop"></span></div>
+          <button class="shop-modal-close" id="closeShopBtn">✕</button>
+        </div>
+        <div class="shop-grid" id="charList"></div>
+      </div>
+    </div>
+
+    <div class="placement-actionbar">
+      <div id="manualBattleControls">
+        <span class="status-line">
+          シード: <input type="number" id="seedInput" style="width:110px">
+          <button id="rerollSeedBtn" title="シードをランダムに">🎲</button>
+        </span>
+        <button id="startBattleBtn" class="btn-primary-lg">戦闘開始</button>
+      </div>
+      <div id="onlineBattleNote" style="display:none;">
+        <span class="status-line" style="color:var(--text-dim);">配置が終わったら上部の「配置完了」を押してください。両者揃うと自動開戦します。</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="battleScreen" class="screen-view" style="display:none;">
+    <div class="battle-topbar">
+      <h2 id="battlePanelTitle">戦闘（P3+P4テスト）</h2>
+    </div>
+    <div class="battle-body">
+      <div class="battle-board-col" id="boardSlotBattle"></div>
+      <div class="panel controls battle-side">
+        <div id="playbackControls" style="display:none;">
+          <div class="status-line" id="tickLabel"></div>
+          <div style="display:flex; gap:4px; flex-wrap:wrap;">
+            <button id="restartBtn">|◀ 最初</button>
+            <button id="playPauseBtn">▶ 再生</button>
+            <button id="skipBtn">▶▶ 最後まで</button>
+          </div>
+          <div class="status-line" style="margin-top:6px;">
+            速度:
+            <button class="speed-btn" data-speed="1">1x</button>
+            <button class="speed-btn" data-speed="2">2x</button>
+            <button class="speed-btn" data-speed="4">4x</button>
+          </div>
+          <div id="battleResultLabel" class="status-line" style="margin-top:6px; color:#ffd479;"></div>
+          <div id="roundAdvancePanel" style="display:none; margin-top:8px;">
+            <button id="nextRoundBtn">次のラウンドへ進む</button>
+          </div>
+        </div>
+        <h2>ログ</h2>
+        <div id="battleLogFeed"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scrim" id="matchResultScrim">
+    <div class="match-result-modal" id="matchResultModal">
+      <div class="match-result-title" id="matchResultTitle">勝利</div>
+      <div class="match-result-sub" id="matchResultSub"></div>
+      <div class="match-result-actions">
+        <button id="rematchBtn" class="btn-primary-lg">再戦する</button>
+        <button id="goHomeBtn" class="close-btn">ホームに戻る</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+"use strict";
+
+/* ==================== P5: Firebase同期 ====================
+ * Realtime Databaseのデータ構造（roomCode = ホストが発行する4桁数字）:
+ *   /rooms/{roomCode}/
+ *     status        : "waiting"（ホストのみ在室） | "placing"（両者在室・配置中） | "battle"（両者ready・開戦）
+ *     createdAt     : サーバータイムスタンプ
+ *     seed          : 両者readyになった時点でホストが発行する共有乱数シード（number）
+ *     hostOnline    : bool（onDisconnectで自動false化）
+ *     guestOnline   : bool（onDisconnectで自動false化）
+ *     placements/
+ *       player1/ { bases:[...], units:[...], credits, ready:bool }
+ *       player2/ { bases:[...], units:[...], credits, ready:bool }
+ * 秘匿は「クライアントが相手側placementsを配置フェイズ中は読んでもローカル状態に取り込まない・描画しない」という
+ * UI制御のみで実現する（開発者ツールで覗けば見えてしまう制約はUC了承済み）。
+ * 戦闘結果自体は同期しない。両者readyでseedとplacementsが揃った時点で各クライアントがsimulateBattle()を
+ * ローカルで独立実行し、共有シードにより同一結果になることを担保する（設計原則§5-2）。
+ * ==================================================================== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getDatabase, ref, set, update, get, onValue, onDisconnect, serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD6SFGI2FSLBST74-eGu7JHqLThFv7RRnY",
+  authDomain: "auto-batoen.firebaseapp.com",
+  databaseURL: "https://auto-batoen-default-rtdb.asia-southeast1.firebasedatabase.app/",
+  projectId: "auto-batoen",
+  storageBucket: "auto-batoen.firebasestorage.app",
+  messagingSenderId: "163061377278",
+  appId: "1:163061377278:web:86c538448a79191b7a5daf",
+  measurementId: "G-JDX9PZD487",
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getDatabase(fbApp);
+
+/* ==================== 座標系 ====================
+ * 格子の基本表現は「オフセット座標」(col, row)。col=0..19, row=0..18。
+ * pointy-top ヘックスを odd-r（奇数行を右にずらす）方式で敷き詰める。
+ * row 0〜6 = プレイヤー1の自分側半分 / row 7〜11 = 中立地帯（どちらの陣地にもならない）
+ * / row 12〜18 = プレイヤー2の自分側半分。両陣営の自陣が直接隣接しないようにする帯。
+ * 内部表現はcolを引き続き0始まりの数値で扱う。列見出し（UI表示）だけA〜Tのアルファベットにする
+ * （2026-08-23、マップが見づらいとのUC指摘でrow7-9・13-17・20-22を削除し全19行に縮小した際に追加）。
+ * 距離計算・対称処理が必要な箇所は axial 座標 (q, r) に変換して行う。
+ *   q = col - floor(row/2),  r = row
+ * ================================================== */
+
+const COLS = 20;
+// [2026-08-23確定] マップ縮小: 旧30行からrow7-9・13-17・20-22（計11行）を削除し、残り19行を0〜18に振り直した
+const ROWS = 19;
+const NEUTRAL_ROW_START = 7;
+const NEUTRAL_ROW_END = 11; // 両端含む
+function colLabel(col) { return String.fromCharCode(65 + col); } // [UI] 列見出しは数字ではなくA〜T表記
+const HEX_SIZE = 16; // ヘックス半径(px)
+const PADDING = 28;  // 軸ラベル用の余白
+
+const HEX_W = Math.sqrt(3) * HEX_SIZE;
+const HEX_H = 2 * HEX_SIZE;
+const HORIZ = HEX_W;
+const VERT = HEX_H * 0.75;
+
+function hexCenter(col, row) {
+  const x = HORIZ * (col + 0.5 * (row % 2)) + HEX_SIZE + PADDING;
+  const y = VERT * row + HEX_SIZE + PADDING;
+  return { x, y };
+}
+
+function hexCorners(cx, cy) {
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 180 * (60 * i - 30);
+    pts.push(`${(cx + HEX_SIZE * Math.cos(angle)).toFixed(2)},${(cy + HEX_SIZE * Math.sin(angle)).toFixed(2)}`);
+  }
+  return pts.join(" ");
+}
+
+function offsetToAxial(col, row) {
+  const q = col - Math.floor(row / 2);
+  const r = row;
+  return { q, r };
+}
+
+function hexDistance(a, b) {
+  const A = offsetToAxial(a.col, a.row);
+  const B = offsetToAxial(b.col, b.row);
+  const ax = A.q, az = A.r, ay = -ax - az;
+  const bx = B.q, bz = B.r, by = -bx - bz;
+  return Math.max(Math.abs(ax - bx), Math.abs(ay - by), Math.abs(az - bz));
+}
+
+function key(col, row) { return `${col},${row}`; }
+
+/* ==================== 壁マス（設計書§10-1確定→2026-08-23マップ縮小に伴い再設計） ====================
+ * 全マスを手打ちで定義し、180度点対称（col -> COLS-1-col, row -> ROWS-1-row）
+ * でミラーして生成する（片側だけ書けば反対側は自動生成される）。
+ * 拠点は固定位置（FIXED_BASES）でこのレイアウトと非衝突であることを確認済み。
+ * ================================================================ */
+
+const WALLS_HALF = [
+  // --- P1側(row0〜6)。P2側は自動ミラー ---
+  // 拠点(col5,row0)/(col14,row0)のすぐ手前を守る障害物
+  [5, 3], [14, 3],
+  [9, 1], [10, 1],
+  // 中立地帯手前のチョークポイント（行5ラインに5レーンの通路を残す）
+  [2, 5], [3, 5], [4, 5],
+  [7, 5], [8, 5],
+  [11, 5], [12, 5],
+  [15, 5], [16, 5], [17, 5],
+  // --- 中立地帯(row7〜11)。180度ミラーで反対側の行も自動生成される ---
+  // col6・col13の縦仕切りで左(col0-5)/中央(col7-12)/右(col13-19)の3レーンに分割。row9(中央)のみ通行可
+  [6, 7], [6, 8],
+  [13, 7], [13, 8],
+  // 左右レーン内の岩場（row10側は180度ミラーで自動生成、row9は通行可のまま）
+  [1, 8], [2, 8],
+  [17, 8], [18, 8],
+];
+
+const walls = new Set();
+for (const [c, r] of WALLS_HALF) {
+  walls.add(key(c, r));
+  walls.add(key(COLS - 1 - c, ROWS - 1 - r));
+}
+
+function isWall(col, row) { return walls.has(key(col, row)); }
+function inBounds(col, row) { return col >= 0 && col < COLS && row >= 0 && row < ROWS; }
+
+/* ==================== 状態 ==================== */
+
+// [仕様変更] 拠点は固定位置（プレイヤーが選んで置くのではない）。設計書§2参照。
+// 180度点対称。現行のWALLS_HALFと衝突しない位置に決定済み。
+// [2026-08-23] マップ縮小(ROWS=19)に伴いP2側をrow29→row18に更新。
+const FIXED_BASES = {
+  player1: [{ col: 5, row: 0 }, { col: 14, row: 0 }],
+  player2: [{ col: 5, row: 18 }, { col: 14, row: 18 }],
+};
+function resetBasesToFixedPositions() {
+  bases.player1 = FIXED_BASES.player1.map(b => ({ ...b }));
+  bases.player2 = FIXED_BASES.player2.map(b => ({ ...b }));
+}
+
+const bases = { player1: [], player2: [] };
+resetBasesToFixedPositions();
+let currentPlayer = "player1"; // [TEST] Firebase導入後はルーム参加時に確定する値に置き換える
+
+function isBaseAt(col, row) {
+  return bases.player1.some(b => b.col === col && b.row === row) ||
+         bases.player2.some(b => b.col === col && b.row === row);
+}
+
+function computeTerritory(player) {
+  const set = new Set();
+  for (const base of bases[player]) {
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        if (isWall(col, row)) continue;
+        if (hexDistance(base, { col, row }) <= 3) set.add(key(col, row));
+      }
+    }
+  }
+  return set;
+}
+
+/* ==================== キャラクター（初期プール8体・仮／設計書§9） ==================== */
+
+const CHARACTERS = [
+  { id: "soldier", name: "ソルジャー", price: 50, hp: 100, atk: 20, ap: 20, skills: [] },
+  { id: "guardian", name: "ガーディアン", price: 60, hp: 200, atk: 10, ap: 15, skills: ["押し込み"] },
+  { id: "lancer", name: "ランサー", price: 65, hp: 90, atk: 20, ap: 18, skills: ["近接連携攻撃"] },
+  { id: "archer", name: "アーチャー", price: 60, hp: 60, atk: 25, ap: 12, skills: ["射程ボーナス2", "攻撃消費2"] },
+  { id: "sniper", name: "スナイパー", price: 70, hp: 50, atk: 40, ap: 10, skills: ["射撃5", "攻撃消費3"] },
+  { id: "trapper", name: "トラッパー", price: 55, hp: 70, atk: 10, ap: 6, skills: ["罠設置"] },
+  { id: "cleric", name: "クレリック", price: 70, hp: 80, atk: 10, ap: 15, skills: ["全体回復20", "射程ボーナス1"] },
+  { id: "ogre", name: "オーガ", price: 90, hp: 100, atk: 15, ap: 14, skills: ["拠点破壊"] },
+];
+
+function getBaseCharacter(charId) { return CHARACTERS.find(c => c.id === charId); }
+
+// [UI] キャラカードの一文字アイコン（2026-08-23: 配置画面リデザインで使用）。
+// 2026-08-25: キャラ画像を追加できるようにした。画像は images/chars/<charId>.png にUCが用意する運用。
+// 画像が無い/読み込みに失敗した場合は自動的にこの一文字アイコンにフォールバックする（下記charImageSrc/onerror参照）。
+const CHAR_ICON = {
+  soldier: "兵", guardian: "盾", lancer: "槍", archer: "弓",
+  sniper: "狙", trapper: "罠", cleric: "杖", ogre: "重",
+};
+function charImageSrc(charId) { return `images/chars/${charId}.png`; }
+// [UI 2026-09-03] 盤面マーカーは小さく丸くクリップされるため、全身の立ち絵だと何のキャラか分かりづらい
+// (UC指摘)。マーカー専用に顔アップの images/chars/<charId>_face.png を用意する運用にした。
+function charFaceSrc(charId) { return `images/chars/${charId}_face.png`; }
+// カード用（HTML文字列内に埋め込む）。読み込み失敗時はこのimgだけ非表示にし、下の文字アイコンを見せる
+function charImageTag(charId) {
+  return `<img class="h-icon-img" src="${charImageSrc(charId)}" alt="" onerror="this.style.display='none'">`;
+}
+
+// [UI 2026-09-05] ステータス目盛りバー表示（UC提示の参考画像を基にArtifactでモックアップ→確認済み）。
+// 目盛り数は「全キャラ中の基礎値の最大値」を満タンとした相対値（星強化分は考慮しない簡易スケール。
+// 強化で基礎最大値を超えても見た目は満タンのままになるだけで表示は破綻しない）
+const STAT_MAX = {
+  hp: Math.max(...CHARACTERS.map(c => c.hp)),
+  atk: Math.max(...CHARACTERS.map(c => c.atk)),
+  ap: Math.max(...CHARACTERS.map(c => c.ap)),
+};
+const STAT_SEGMENTS = 6;
+function statBarRow(kind, label, value) {
+  const filled = Math.max(1, Math.round((value / STAT_MAX[kind]) * STAT_SEGMENTS));
+  let segs = "";
+  for (let i = 0; i < STAT_SEGMENTS; i++) {
+    segs += `<div class="stat-seg${i < filled ? ` on ${kind}` : ""}"></div>`;
+  }
+  return `<div class="stat-row"><span class="stat-label">${label}</span><div class="stat-seg-track">${segs}</div><span class="stat-value">${value}</span></div>`;
+}
+function statBarsHtml(char) {
+  return statBarRow("hp", "HP", char.hp) + statBarRow("ap", "行動力", char.ap) + statBarRow("atk", "攻撃力", char.atk);
+}
+// [UI 2026-09-05] スキルにマウスオーバーすると説明を表示（UC要望）。設計書§8の効果文を基準に、
+// 末尾のN（射撃5・攻撃消費2等）は実際の数値に置き換えて表示する
+const SKILL_DESCRIPTIONS = {
+  "追従": "Nマス以内の味方キャラが移動するたび、行動力消費なしで移動する（1戦闘フェイズに5回まで）",
+  "近接連携攻撃": "自分の攻撃範囲にいる敵キャラを味方の誰かが攻撃した時、行動力消費なしで自身の攻撃力分の追加攻撃をする",
+  "遠距離連携攻撃": "自分の攻撃範囲にいる敵キャラを味方の誰かが攻撃した時、行動力消費なしで自身の攻撃力の半分で追加攻撃をする",
+  "移動ボーナス": "1回の行動消費でNマス移動できる",
+  "無双": "このキャラが敵キャラを倒した時、行動力が3回復する",
+  "罠設置": "このキャラが通ったマスに罠を設置。罠マスの上で敵キャラが行動するたび行動力を追加で1消費させる",
+  "押し込み": "攻撃時50%で発動。対象を攻撃者から見て反対方向へ直線3マス後退させる",
+  "引き寄せ": "攻撃時50%で発動。対象を自分の隣接マス（対象がいた方向）に移動させる",
+  "全体回復": "このキャラ自身が行動力を5消費するたび、自分の攻撃範囲にいる味方キャラのHPをN回復する",
+  "毒": "攻撃した敵に毒を付与。毒状態の敵は攻撃を受けるたび追加で10ダメージ",
+  "拠点破壊": "拠点への攻撃時、攻撃力+100",
+  "強化": "自分の攻撃範囲にいる味方の攻撃力+20（範囲内にいる間だけ有効）",
+  "範囲攻撃": "1回の攻撃で、攻撃範囲にいる敵キャラ全てに攻撃力分のダメージ",
+  "射撃": "配置時に向きを決定。正面から直線Nマスが攻撃範囲になる（周囲1マスの代わり）",
+  "射程ボーナス": "攻撃範囲が全方位にNマス広がる",
+  "攻撃消費": "攻撃時の行動力消費がN増える",
+  "身軽": "壁マスにも移動可能",
+};
+function skillDescription(skillStr) {
+  const m = skillStr.match(/^(.*?)(\d+)$/);
+  const base = m ? m[1] : skillStr;
+  const n = m ? m[2] : null;
+  const desc = SKILL_DESCRIPTIONS[base];
+  if (!desc) return "";
+  return n ? desc.replace(/N/g, n) : desc;
+}
+function skillPillsHtml(skills) {
+  if (!skills.length) return `<div class="skill-pill none">スキルなし</div>`;
+  return skills.map(s => `<div class="skill-pill">${s}</div>`).join("");
+}
+// [UI 2026-09-05] UC要望によりスキル説明は個々のピルではなくカード全体（キャラ）にマウスオーバーした
+// 時点でまとめて出す形に変更。カード要素の.titleにこれを設定して使う
+function allSkillsTooltip(skills) {
+  if (!skills.length) return "スキルなし";
+  return skills.map(s => `${s}: ${skillDescription(s)}`).join("\n");
+}
+
+// [2026-09-05] ランク（★2/★3）の概念はUC判断で一旦撤廃。旧「同キャラ購入で自動強化」・
+// 「盤面上で合成して強化」の両方式の実装詳細はCLAUDE.mdに記録済み（再検討する場合に復元できるように）。
+// 現在は全キャラ常に基礎ステータスのみ
+function getCharacter(charId) {
+  return getBaseCharacter(charId);
+}
+function needsFacing(char) { return char.skills.some(s => s.startsWith("射撃")); }
+
+// R1固定値。R2以降のクレジット・繰越・勝者ボーナスはP6で扱う
+const ROUND1_CREDITS = 200;
+const credits = { player1: ROUND1_CREDITS, player2: ROUND1_CREDITS };
+let currentRound = 1; // [P6] 1〜4
+
+// [P6] ラウンドごとのプール体数目標（設計書§7、2026-08-19確定）。R2〜R4は「どのキャラが増えるか」
+// （設計書§10未確定#2）が決まるまでは全8体を見せる暫定運用。確定しているのはR1の「8体中6体を
+// 共有シードでランダム抽選」という仕組みのみ
+const ROUND_POOL_SIZE = { 1: 6, 2: 7, 3: 8, 4: 10 };
+
+function pickRandomPool(seed, count) {
+  const rng = createRng(seed);
+  const ids = CHARACTERS.map(c => c.id);
+  for (let i = ids.length - 1; i > 0; i--) { // Fisher-Yates（Math.random()直接使用禁止の原則どおり共有シードのrngを使う）
+    const j = Math.floor(rng() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  return ids.slice(0, count).sort();
+}
+
+// 現在購入可能なキャラID一覧。R1はpickRandomPool()でR1開始時に決定・共有（オンラインはFirebase同期、
+// オフラインはローカルシード）。R2以降は上記の理由で暫定的に全8体
+let currentPool = CHARACTERS.map(c => c.id);
+function regenerateRound1Pool(seed) { currentPool = pickRandomPool(seed, ROUND_POOL_SIZE[1]); }
+regenerateRound1Pool(Date.now()); // ページ読み込み時点の初期値（オフラインテスト用。ルーム参加時は共有プールで上書きされる）
+// [P6] 前ラウンドから引き継いだユニットかどうかの判定に使う（再配置制度は2026-09-06にUC判断で撤廃、
+// 引き継ぎユニットは移動・返却とも不可。今ラウンド新規配置ユニットの移動・返却可否の判定にのみ使う）
+let roundStartUnitIds = new Set();
+let persistentTraps = {}; // [P6] ラウンドを跨いで残存する罠（col,row key -> owner）。設計書§8スキル#6
+
+const PURPOSES = [
+  { id: "rush", label: "敵拠点へ最短で向かう" },
+  { id: "guard", label: "この場を守る" },
+  { id: "chase", label: "敵キャラを積極的に追う" },
+  { id: "goto", label: "指定マスへ向かう" },
+];
+// [UI] 配置待ちストリップの「配置済み」カードで使う短縮ラベル（2026-08-23）
+const PURPOSE_SHORT = { rush: "突撃", guard: "守備", chase: "追撃", goto: "指定マス" };
+
+// axial方向ベクトル(dq,dr)込み。射撃Nの直線判定・押し込み/引き寄せの方向計算で実際に使う
+// ピクセル角度は pointy-top odd-r の座標変換 dx=√3*dq+(√3/2)*dr, dy=1.5*dr から算出
+const HEX_DIRECTIONS = [
+  { dq: 1, dr: 0, arrow: "→", angle: 0 },
+  { dq: 1, dr: -1, arrow: "↗", angle: -60 },
+  { dq: 0, dr: -1, arrow: "↖", angle: -120 },
+  { dq: -1, dr: 0, arrow: "←", angle: 180 },
+  { dq: -1, dr: 1, arrow: "↙", angle: 120 },
+  { dq: 0, dr: 1, arrow: "↘", angle: 60 },
+];
+
+/* ==================== キャラ配置・購入状態 ==================== */
+
+let queueSeq = 0;
+const queue = { player1: [], player2: [] }; // 購入済み・未配置キャラ [{qid, charId}]
+
+let unitSeq = 0;
+const units = []; // {id, owner, charId, col, row, purpose, targetHex, facing}
+// [バグ修正 2026-08-23] idは"player1_3"のような文字列（owner名前空間付き）。unitSeqの巻き戻り防止のため
+// 既存ユニットのidから連番部分だけを取り出す。旧仕様の素の数値idが万一残っていても壊れないようフォールバックする。
+function seqPartOfUnitId(id) {
+  const s = String(id);
+  const idx = s.lastIndexOf("_");
+  const n = parseInt(idx === -1 ? s : s.slice(idx + 1), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function unitAt(col, row) { return units.find(u => u.col === col && u.row === row); }
+
+// idle: 通常時（マス上のキャラをクリックで選択） / placeUnit: 配置待ちキャラの設置先待ち / setTarget: 「指定マスへ」の目標マス待ち
+// moveUnit: 今ラウンド新規配置ユニットの移動先待ち（回数制限なし）
+let mode = "idle";
+let selectedQueueEntry = null;
+let selectedUnitId = null;
+
+/* ==================== 戦闘シミュレータ（P3） ====================
+ * ロジックと演出の完全分離の原則により、このセクションは一切DOMに触れない純粋関数群。
+ * simulateBattle(unitsInput, basesInput, seed, options) を呼べばイベントログと最終状態を返す。
+ * ブラウザ・Node.jsどちらからでも同じ結果になることを前提とする（乱数は必ずcreateRng(seed)経由）。
+ *
+ * 実装にあたり、以下は仕様書に明記が無いため妥当な解釈で補った暫定ルール（要UC確認・要将来調整）:
+ *  - 押し込み/引き寄せの方向は「攻撃者→対象のベクトルに最も近い6方向」で決定し、完全なタイの場合は
+ *    HEX_DIRECTIONS配列の順（→→↗→↖→←→↙→↘）で先着優先とする。§8「方向裁定」として2026-08-19確定済み
+ *  - §6-1 の即時終了判定（全滅・拠点陥落・同時陥落の特殊ルール）はP3では行わない。
+ *    P3はtickループの機械的終了条件（§5-1: 全キャラ行動力0、または全員が停止状態＝盤面がこれ以上
+ *    動かない手詰まり状態）まで愚直に進め、baseDestroyed/deathイベントをtick付きでログに残すので、
+ *    勝敗解釈はP6が行う想定。50tick上限の安全装置は2026-09-05にUC判断で廃止した
+ *  - 拠点は移動の障害物として扱う（明記なし、妥当な解釈）
+ *  - 範囲攻撃で複数の敵に同時ヒットした場合、押し込み/引き寄せは対象ごとに独立して50%判定する（明記なし）
+ *  - 追従Nは「移動するたびに」その場でトリガー判定する簡易実装。同一tick内で複数の味方が移動し、
+ *    追従持ちから見て候補が重複するケースの厳密な優先順位付け（§8-1の「複数候補」規定）は簡略化している
+ * ==================================================================== */
+
+// ---- シード付きPRNG (mulberry32)。Math.random()は使わない ----
+function createRng(seed) {
+  let s = seed >>> 0;
+  return function rng() {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function rngInt(rng, n) { return Math.floor(rng() * n); }
+function rngShuffle(rng, arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = rngInt(rng, i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ---- ヘックス幾何ヘルパー ----
+function axialToOffset(q, r) { return { col: q + Math.floor(r / 2), row: r }; }
+
+function neighborsOf(col, row) {
+  const { q, r } = offsetToAxial(col, row);
+  return HEX_DIRECTIONS.map(d => axialToOffset(q + d.dq, r + d.dr));
+}
+
+function nearestHexDirection(from, to) {
+  const A = offsetToAxial(from.col, from.row);
+  const B = offsetToAxial(to.col, to.row);
+  const dq = B.q - A.q, dr = B.r - A.r;
+  const dx = Math.sqrt(3) * dq + (Math.sqrt(3) / 2) * dr;
+  const dy = 1.5 * dr;
+  let best = 0, bestDot = -Infinity;
+  HEX_DIRECTIONS.forEach((d, i) => {
+    const ddx = Math.sqrt(3) * d.dq + (Math.sqrt(3) / 2) * d.dr;
+    const ddy = 1.5 * d.dr;
+    const dot = dx * ddx + dy * ddy;
+    if (dot > bestDot) { bestDot = dot; best = i; }
+  });
+  return best;
+}
+
+function cubeLerp(a, b, t) { return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t }; }
+function cubeRound(c) {
+  let rx = Math.round(c.x), ry = Math.round(c.y), rz = Math.round(c.z);
+  const dx = Math.abs(rx - c.x), dy = Math.abs(ry - c.y), dz = Math.abs(rz - c.z);
+  if (dx > dy && dx > dz) rx = -ry - rz; else if (dy > dz) ry = -rx - rz; else rz = -rx - ry;
+  return { x: rx, y: ry, z: rz };
+}
+function hexLineCells(a, b) {
+  const A = offsetToAxial(a.col, a.row), B = offsetToAxial(b.col, b.row);
+  const ac = { x: A.q, y: -A.q - A.r, z: A.r }, bc = { x: B.q, y: -B.q - B.r, z: B.r };
+  const n = hexDistance(a, b);
+  const cells = [];
+  for (let i = 0; i <= n; i++) {
+    const c = cubeRound(cubeLerp(ac, bc, n === 0 ? 0 : i / n));
+    cells.push(axialToOffset(c.x, c.z));
+  }
+  return cells;
+}
+function hasLineOfSight(a, b) {
+  const cells = hexLineCells(a, b);
+  for (let i = 1; i < cells.length - 1; i++) {
+    if (isWall(cells[i].col, cells[i].row)) return false;
+  }
+  return true;
+}
+
+// BFS経路探索。goalマス自体は障害物判定を無視して常に到達候補にする（ゴールが味方/敵に占有されている場合に隣接マスへ寄せる用途のため）
+function findPath(start, goal, isBlocked) {
+  if (start.col === goal.col && start.row === goal.row) return [];
+  const startKey = key(start.col, start.row);
+  const goalKey = key(goal.col, goal.row);
+  const visited = new Set([startKey]);
+  const queue = [start];
+  const cameFrom = new Map();
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const curKey = key(cur.col, cur.row);
+    if (curKey === goalKey) {
+      const path = [];
+      let k = curKey;
+      while (k !== startKey) {
+        const [c, r] = k.split(",").map(Number);
+        path.unshift({ col: c, row: r });
+        k = cameFrom.get(k);
+      }
+      return path;
+    }
+    for (const n of neighborsOf(cur.col, cur.row)) {
+      if (!inBounds(n.col, n.row)) continue;
+      const nk = key(n.col, n.row);
+      if (visited.has(nk)) continue;
+      if (isBlocked(n.col, n.row) && nk !== goalKey) continue;
+      visited.add(nk);
+      cameFrom.set(nk, curKey);
+      queue.push(n);
+    }
+  }
+  return null;
+}
+
+/* ==================== 戦闘状態の初期化 ==================== */
+
+function initBattleState(unitsInput, basesInput, options) {
+  const opts = options || {};
+  const baseHp = opts.baseHp || 300;
+  const bases = [];
+  let baseSeq = 0;
+  for (const owner of ["player1", "player2"]) {
+    for (const b of (basesInput[owner] || [])) {
+      baseSeq++;
+      bases.push({
+        id: `base${baseSeq}`, owner, col: b.col, row: b.row,
+        hp: b.hp != null ? b.hp : baseHp, maxHp: b.hp != null ? b.hp : baseHp,
+        isBase: true, alive: true,
+      });
+    }
+  }
+  const units = unitsInput.map(u => {
+    const char = getCharacter(u.charId);
+    return {
+      id: u.id, owner: u.owner, charId: u.charId,
+      col: u.col, row: u.row,
+      hp: u.hp != null ? u.hp : char.hp, maxHp: char.hp,
+      ap: u.ap != null ? u.ap : char.ap + (u.apCarry || 0),
+      purpose: u.purpose, targetHex: u.targetHex ? { ...u.targetHex } : null,
+      facing: u.facing != null ? u.facing : null,
+      poisoned: !!u.poisoned,
+      apSpentTotal: 0, healTriggerCounter: 0, followUsed: 0,
+      isBase: false, alive: true,
+    };
+  });
+  const traps = new Map();
+  for (const [k, owner] of Object.entries(opts.traps || {})) traps.set(k, owner);
+  return { units, bases, traps, round4: !!opts.round4 };
+}
+
+// [P7] §6-3 4R特殊処理: 行動力が足りないキャラは、必要な分だけHP10→行動力1に変換してから行動する
+// （UC確認済み: 1回の行動に必要な分だけ何回でも変換／端数HPは全て消費して変換し0になれば死亡）。
+// R4以外（state.round4が false）は常にtrueを返し、既存のマイナスap許容挙動をそのまま維持する。
+function convertHpForAp(state, unit, apNeeded, log, tick) {
+  if (!state.round4) return true;
+  while (unit.ap < apNeeded && unit.hp > 0) {
+    const hpSpent = Math.min(10, unit.hp);
+    unit.hp -= hpSpent;
+    unit.ap += 1;
+    log.push({ tick, type: "hpToAp", unitId: unit.id, hpSpent, hpAfter: unit.hp, apAfter: unit.ap });
+    if (unit.hp <= 0) {
+      unit.alive = false;
+      log.push({ tick, type: "death", unitId: unit.id });
+      return false; // 変換の代償で力尽きた。この行動自体は不発
+    }
+  }
+  return true;
+}
+
+function allTargets(state) { return [...state.units.filter(t => t.alive), ...state.bases.filter(t => t.alive)]; }
+
+function isOccupied(state, col, row, excludeId) {
+  return allTargets(state).some(t => t.id !== excludeId && t.col === col && t.row === row);
+}
+
+function isBlockedForUnit(state, unit, col, row) {
+  if (!inBounds(col, row)) return true;
+  const char = getCharacter(unit.charId);
+  if (isWall(col, row) && !char.skills.includes("身軽")) return true;
+  if (isOccupied(state, col, row, unit.id)) return true;
+  return false;
+}
+
+/* ==================== 攻撃範囲・対象選択 ==================== */
+
+function attackRangeCells(unit) {
+  const char = getCharacter(unit.charId);
+  const shootSkill = char.skills.find(s => s.startsWith("射撃"));
+  if (shootSkill) {
+    const n = parseInt(shootSkill.slice(2), 10);
+    const dir = HEX_DIRECTIONS[unit.facing != null ? unit.facing : 0];
+    let { q, r } = offsetToAxial(unit.col, unit.row);
+    const cells = [];
+    for (let i = 1; i <= n; i++) {
+      q += dir.dq; r += dir.dr;
+      const c = axialToOffset(q, r);
+      if (!inBounds(c.col, c.row) || isWall(c.col, c.row)) break;
+      cells.push(c);
+    }
+    return cells;
+  }
+  const bonusSkill = char.skills.find(s => s.startsWith("射程ボーナス"));
+  const n = bonusSkill ? parseInt(bonusSkill.slice(6), 10) : 1;
+  const cells = [];
+  const minCol = Math.max(0, unit.col - 2 * n), maxCol = Math.min(COLS - 1, unit.col + 2 * n);
+  const minRow = Math.max(0, unit.row - n), maxRow = Math.min(ROWS - 1, unit.row + n);
+  for (let row = minRow; row <= maxRow; row++) {
+    for (let col = minCol; col <= maxCol; col++) {
+      if (col === unit.col && row === unit.row) continue;
+      if (hexDistance({ col: unit.col, row: unit.row }, { col, row }) > n) continue;
+      if (!hasLineOfSight({ col: unit.col, row: unit.row }, { col, row })) continue;
+      cells.push({ col, row });
+    }
+  }
+  return cells;
+}
+
+function isInAttackRange(unit, pos) {
+  return attackRangeCells(unit).some(c => c.col === pos.col && c.row === pos.row);
+}
+
+function findTargetsInRange(state, unit) {
+  const cells = attackRangeCells(unit);
+  const cellKeys = new Set(cells.map(c => key(c.col, c.row)));
+  return allTargets(state).filter(t => t.owner !== unit.owner && cellKeys.has(key(t.col, t.row)));
+}
+
+function nearestByHexDistance(from, list, rng) {
+  let minDist = Infinity, best = [];
+  for (const t of list) {
+    const d = hexDistance({ col: from.col, row: from.row }, { col: t.col, row: t.row });
+    if (d < minDist) { minDist = d; best = [t]; } else if (d === minDist) best.push(t);
+  }
+  if (best.length === 0) return null;
+  return best[rngInt(rng, best.length)];
+}
+
+function pickTarget(targets, unit, rng) { return nearestByHexDistance(unit, targets, rng); }
+
+function effectiveAtk(state, unit) {
+  const char = getCharacter(unit.charId);
+  let atk = char.atk;
+  for (const ally of state.units) {
+    if (!ally.alive || ally.owner !== unit.owner || ally.id === unit.id) continue;
+    const allyChar = getCharacter(ally.charId);
+    if (allyChar.skills.includes("強化") && isInAttackRange(ally, { col: unit.col, row: unit.row })) atk += 20;
+  }
+  return atk;
+}
+
+/* ==================== 目的（AI移動先） ==================== */
+
+function computeGoal(state, unit, rng) {
+  if (unit.purpose === "rush") {
+    const enemyBases = state.bases.filter(b => b.owner !== unit.owner && b.alive);
+    return nearestByHexDistance(unit, enemyBases, rng);
+  }
+  if (unit.purpose === "chase") {
+    const enemies = state.units.filter(u => u.alive && u.owner !== unit.owner);
+    return nearestByHexDistance(unit, enemies, rng);
+  }
+  if (unit.purpose === "goto") {
+    return unit.targetHex ? { col: unit.targetHex.col, row: unit.targetHex.row } : null;
+  }
+  return null;
+}
+
+/* ==================== ダメージ・攻撃解決 ==================== */
+
+function applyDamage(state, target, dmg, log, tick, attacker) {
+  const actualDmg = Math.min(dmg, target.hp);
+  target.hp -= actualDmg;
+  log.push({ tick, type: "damage", attackerId: attacker.id, targetId: target.id, targetIsBase: target.isBase, amount: actualDmg, targetHpAfter: target.hp });
+  if (target.hp <= 0) {
+    target.alive = false;
+    log.push({ tick, type: target.isBase ? "baseDestroyed" : "death", unitId: target.id });
+  }
+  return actualDmg;
+}
+
+function resolveAttack(state, attacker, target, rng, log, tick, opts) {
+  const o = opts || {};
+  const isExtra = !!o.isExtra;
+  const attackerChar = getCharacter(attacker.charId);
+  let dmg = o.dmgOverride != null ? o.dmgOverride : effectiveAtk(state, attacker);
+  if (target.isBase && attackerChar.skills.includes("拠点破壊")) dmg += 100;
+  if (!target.isBase && target.poisoned) dmg += 10;
+
+  applyDamage(state, target, dmg, log, tick, attacker);
+  if (!target.alive) {
+    if (!target.isBase && attackerChar.skills.includes("無双") && attacker.alive) {
+      attacker.ap += 3;
+      log.push({ tick, type: "musouRecover", unitId: attacker.id, amount: 3 });
+    }
+    return;
+  }
+
+  if (!isExtra && !target.isBase && attackerChar.skills.includes("毒") && !target.poisoned) {
+    target.poisoned = true;
+    log.push({ tick, type: "poison", targetId: target.id });
+  }
+  if (!isExtra) {
+    if (attackerChar.skills.includes("押し込み") && rng() < 0.5) applyPush(state, attacker, target, log, tick);
+    else if (attackerChar.skills.includes("引き寄せ") && rng() < 0.5) applyPull(state, attacker, target, log, tick);
+  }
+}
+
+function applyPush(state, attacker, target, log, tick) {
+  const dirIdx = nearestHexDirection({ col: attacker.col, row: attacker.row }, { col: target.col, row: target.row });
+  const dir = HEX_DIRECTIONS[dirIdx];
+  let { q, r } = offsetToAxial(target.col, target.row);
+  let cur = { col: target.col, row: target.row };
+  for (let i = 0; i < 3; i++) {
+    q += dir.dq; r += dir.dr;
+    const next = axialToOffset(q, r);
+    if (!inBounds(next.col, next.row) || isWall(next.col, next.row) || isOccupied(state, next.col, next.row, target.id)) break;
+    cur = next;
+  }
+  if (cur.col !== target.col || cur.row !== target.row) {
+    log.push({ tick, type: "push", targetId: target.id, from: { col: target.col, row: target.row }, to: cur });
+    target.col = cur.col; target.row = cur.row;
+  }
+}
+
+function applyPull(state, attacker, target, log, tick) {
+  const dirIdx = nearestHexDirection({ col: attacker.col, row: attacker.row }, { col: target.col, row: target.row });
+  const dir = HEX_DIRECTIONS[dirIdx];
+  const { q: aq, r: ar } = offsetToAxial(attacker.col, attacker.row);
+  const dest = axialToOffset(aq + dir.dq, ar + dir.dr);
+  if (dest.col === target.col && dest.row === target.row) return;
+  if (!inBounds(dest.col, dest.row) || isWall(dest.col, dest.row) || isOccupied(state, dest.col, dest.row, target.id)) return;
+  log.push({ tick, type: "pull", targetId: target.id, from: { col: target.col, row: target.row }, to: dest });
+  target.col = dest.col; target.row = dest.row;
+}
+
+function triggerLinkedAttacks(state, attacker, hitTargets, rng, log, tick) {
+  for (const ally of state.units) {
+    if (!ally.alive || ally.owner !== attacker.owner || ally.id === attacker.id) continue;
+    const allyChar = getCharacter(ally.charId);
+    const hasMelee = allyChar.skills.includes("近接連携攻撃");
+    const hasRanged = allyChar.skills.includes("遠距離連携攻撃");
+    if (!hasMelee && !hasRanged) continue;
+    const inRangeTarget = hitTargets.find(t => t.alive && isInAttackRange(ally, { col: t.col, row: t.row }));
+    if (!inRangeTarget) continue;
+    const dmg = hasMelee ? allyChar.atk : Math.floor(allyChar.atk / 2);
+    log.push({ tick, type: "linkedAttack", unitId: ally.id, targetId: inRangeTarget.id, skill: hasMelee ? "近接連携攻撃" : "遠距離連携攻撃" });
+    resolveAttack(state, ally, inRangeTarget, rng, log, tick, { isExtra: true, dmgOverride: dmg });
+  }
+}
+
+function triggerHealAura(state, unit, log, tick) {
+  const char = getCharacter(unit.charId);
+  const healSkill = char.skills.find(s => s.startsWith("全体回復"));
+  if (!healSkill) return;
+  const n = parseInt(healSkill.slice(4), 10);
+  const shouldHaveTriggered = Math.floor(unit.apSpentTotal / 5);
+  if (shouldHaveTriggered <= unit.healTriggerCounter) return;
+  unit.healTriggerCounter = shouldHaveTriggered;
+  const allies = state.units.filter(a => a.alive && a.owner === unit.owner && isInAttackRange(unit, { col: a.col, row: a.row }));
+  for (const ally of allies) {
+    const healAmt = Math.min(n, ally.maxHp - ally.hp);
+    if (healAmt > 0) {
+      ally.hp += healAmt;
+      log.push({ tick, type: "heal", healerId: unit.id, targetId: ally.id, amount: healAmt });
+    }
+  }
+}
+
+function triggerFollow(state, mover, moverOldPos, rng, log, tick) {
+  const candidates = state.units.filter(u => {
+    if (!u.alive || u.owner !== mover.owner || u.id === mover.id) return false;
+    const char = getCharacter(u.charId);
+    const followSkill = char.skills.find(s => s.startsWith("追従"));
+    if (!followSkill) return false;
+    if ((u.followUsed || 0) >= 5) return false;
+    const n = parseInt(followSkill.slice(2), 10);
+    return hexDistance({ col: u.col, row: u.row }, moverOldPos) <= n;
+  });
+  for (const follower of candidates) {
+    const path = findPath({ col: follower.col, row: follower.row }, { col: mover.col, row: mover.row }, (c, r) => isBlockedForUnit(state, follower, c, r));
+    if (!path || path.length <= 1) continue;
+    const dest = path[path.length - 2];
+    if (isBlockedForUnit(state, follower, dest.col, dest.row)) continue;
+    const from = { col: follower.col, row: follower.row };
+    follower.col = dest.col; follower.row = dest.row;
+    follower.followUsed = (follower.followUsed || 0) + 1;
+    log.push({ tick, type: "followMove", unitId: follower.id, from, to: { col: dest.col, row: dest.row } });
+  }
+}
+
+/* ==================== 1キャラの1アクション ==================== */
+
+function performAction(state, unit, rng, log, tick) {
+  // 「指定マスへ」が配置時点/前回の移動で既に目標マスに到達済みなら、
+  // 移動処理を待たずにここで即座に「守る」へ切り替える（無駄なtick消費を防ぐ）
+  if (unit.purpose === "goto" && unit.targetHex && unit.col === unit.targetHex.col && unit.row === unit.targetHex.row) {
+    unit.purpose = "guard";
+    log.push({ tick, type: "purposeChange", unitId: unit.id, purpose: "guard" });
+    return;
+  }
+
+  const char = getCharacter(unit.charId);
+  const trapOwner = state.traps.get(key(unit.col, unit.row));
+  const trapSurcharge = (trapOwner && trapOwner !== unit.owner) ? 1 : 0;
+
+  const targets = findTargetsInRange(state, unit);
+  if (targets.length > 0) {
+    const atkConsumeSkill = char.skills.find(s => s.startsWith("攻撃消費"));
+    const extraCost = atkConsumeSkill ? parseInt(atkConsumeSkill.slice(4), 10) : 0;
+    const cost = 1 + extraCost + trapSurcharge;
+    if (!convertHpForAp(state, unit, cost, log, tick)) return; // [P7] R4: 変換の代償で死亡したら攻撃不発
+
+    let hitTargets;
+    if (char.skills.includes("範囲攻撃")) {
+      hitTargets = targets.slice();
+      for (const t of hitTargets) resolveAttack(state, unit, t, rng, log, tick, {});
+    } else {
+      const t = pickTarget(targets, unit, rng);
+      hitTargets = [t];
+      resolveAttack(state, unit, t, rng, log, tick, {});
+    }
+    unit.ap -= cost;
+    unit.apSpentTotal += cost;
+    log.push({ tick, type: "attack", unitId: unit.id, targetIds: hitTargets.map(t => t.id), apCost: cost });
+    triggerLinkedAttacks(state, unit, hitTargets, rng, log, tick);
+    triggerHealAura(state, unit, log, tick);
+    return;
+  }
+
+  const goal = computeGoal(state, unit, rng);
+  if (!goal) return;
+  const path = findPath({ col: unit.col, row: unit.row }, goal, (c, r) => isBlockedForUnit(state, unit, c, r));
+  if (!path || path.length === 0) {
+    log.push({ tick, type: "stay", unitId: unit.id });
+    return;
+  }
+
+  const moveBonusSkill = char.skills.find(s => s.startsWith("移動ボーナス"));
+  const moveRange = moveBonusSkill ? parseInt(moveBonusSkill.slice(6), 10) : 1;
+  const steps = Math.min(moveRange, path.length);
+  const dest = path[steps - 1];
+  const traversed = path.slice(0, steps);
+
+  const cost = 1 + trapSurcharge;
+  if (!convertHpForAp(state, unit, cost, log, tick)) return; // [P7] R4: 変換の代償で死亡したら移動不発
+  unit.ap -= cost;
+  unit.apSpentTotal += cost;
+  const fromPos = { col: unit.col, row: unit.row };
+  unit.col = dest.col; unit.row = dest.row;
+  log.push({ tick, type: "move", unitId: unit.id, from: fromPos, to: { col: dest.col, row: dest.row }, apCost: cost });
+
+  if (char.skills.includes("罠設置")) {
+    for (const cell of traversed) {
+      state.traps.set(key(cell.col, cell.row), unit.owner);
+      // [UI 2026-09-05] 罠マークを盤面に表示するため、設置イベント自体をログに残す（従来はログ無し）
+      log.push({ tick, type: "trapSet", unitId: unit.id, col: cell.col, row: cell.row, owner: unit.owner });
+    }
+  }
+
+  if (unit.purpose === "goto" && unit.targetHex && dest.col === unit.targetHex.col && dest.row === unit.targetHex.row) {
+    unit.purpose = "guard";
+    log.push({ tick, type: "purposeChange", unitId: unit.id, purpose: "guard" });
+  }
+
+  triggerFollow(state, unit, fromPos, rng, log, tick);
+  triggerHealAura(state, unit, log, tick);
+}
+
+/* ==================== 行動力繰越（§5-4） ==================== */
+
+function computeCarryover(state) {
+  for (const u of state.units) {
+    if (!u.alive) { u.carryoverAp = 0; continue; }
+    const char = getCharacter(u.charId);
+    const leftover = Math.max(0, u.ap);
+    const carry = Math.ceil(leftover / 2);
+    u.carryoverAp = Math.min(carry, char.ap);
+  }
+}
+
+/* ==================== エントリポイント ==================== */
+
+function simulateBattle(unitsInput, basesInput, seed, options) {
+  const rng = createRng(seed);
+  const state = initBattleState(unitsInput, basesInput, options);
+  const log = [];
+  let tick = 0;
+
+  // [P7] R4はap<=0でもhpが残っていれば行動候補に残す（performAction内でHP→行動力変換を試みる）
+  const canAct = u => u.alive && (u.ap > 0 || (state.round4 && u.hp > 0));
+
+  // [§5-1 2026-09-05仕様変更] 「全キャラが行動力0、または停止状態（待機中・移動不能）になったら
+  // 戦闘フェイズ終了」を厳密に判定するようにした。旧実装は行動力0（canAct=false）でしか終了せず、
+  // 全員行動力が残っていても誰も動けない/攻撃できない手詰まり状態では50tick上限まで無駄にtickを
+  // 消化していた。tick上限自体もUC判断で廃止（行動力は有限で無双回復・HP→AP変換も上限があるため、
+  // 手詰まり検出があれば実質的に必ず終了する）
+  while (true) {
+    // [§5-4 2026-09-05仕様変更] 「この場を守る」は範囲内の敵を通常攻撃するが、そのtick内では
+    // 他の目的のキャラより行動順位が低い。「守る以外（ランダム順）」→「守る（この中もランダム順）」の
+    // 2段階でシャッフルすることで実現する（守る同士の中の順番は引き続きランダム）
+    const normalIds = state.units.filter(u => canAct(u) && u.purpose !== "guard").map(u => u.id);
+    const guardIds = state.units.filter(u => canAct(u) && u.purpose === "guard").map(u => u.id);
+    if (normalIds.length === 0 && guardIds.length === 0) break; // 全員行動力0（§5-1前段）
+    tick++;
+    const order = [...rngShuffle(rng, normalIds), ...rngShuffle(rng, guardIds)];
+    let tickHadRealAction = false;
+    for (const id of order) {
+      const unit = state.units.find(u => u.id === id);
+      if (!unit || !canAct(unit)) continue;
+      const beforeLen = log.length;
+      performAction(state, unit, rng, log, tick);
+      // "stay"（動けず停止・行動力消費なし）だけが積まれた場合は盤面に変化なし＝手詰まり候補
+      if (log.slice(beforeLen).some(e => e.type !== "stay")) tickHadRealAction = true;
+    }
+    if (!tickHadRealAction) break; // 全員が停止状態＝これ以上盤面が動かない（§5-1後段）
+  }
+
+  computeCarryover(state);
+  return {
+    log,
+    tickCount: tick,
+    endReason: "exhausted",
+    units: state.units,
+    bases: state.bases,
+    traps: Object.fromEntries(state.traps),
+  };
+}
+
+/* ==================== 描画 ==================== */
+
+const svg = document.getElementById("board");
+const svgW = HORIZ * (COLS + 0.5) + PADDING * 2;
+const svgH = VERT * (ROWS - 1) + HEX_H + PADDING * 2;
+svg.setAttribute("width", svgW);
+svg.setAttribute("height", svgH);
+svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
+
+const nsSVG = "http://www.w3.org/2000/svg";
+function el(tag, attrs) {
+  const e = document.createElementNS(nsSVG, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+const gBase = el("g", { id: "gBase" });
+const gTerritory = el("g", { id: "gTerritory" });
+const gGrid = el("g", { id: "gGrid" });
+const gAttackRange = el("g", { id: "gAttackRange" }); // [UI 2026-08-24] ユニットの攻撃範囲オーバーレイ（配置画面・戦闘画面共通）
+const gTraps = el("g", { id: "gTraps" }); // [UI 2026-09-05] 罠マーク。配置画面・戦闘画面共通（罠は相手からも見える仕様のため）
+const gMarkers = el("g", { id: "gMarkers" });
+const gBattleUnits = el("g", { id: "gBattleUnits", visibility: "hidden" });
+const gBattleFx = el("g", { id: "gBattleFx" });
+const gCoordLabels = el("g", { id: "gCoordLabels" });
+const gAxis = el("g", { id: "gAxis" });
+svg.append(gBase, gTerritory, gGrid, gAttackRange, gTraps, gMarkers, gBattleUnits, gBattleFx, gCoordLabels, gAxis);
+
+const baseFillCells = new Map();   // key -> polygon（壁/空きマス色）
+const territoryCells = new Map();  // key -> polygon（自陣オーバーレイ）
+
+for (let row = 0; row < ROWS; row++) {
+  for (let col = 0; col < COLS; col++) {
+    const { x, y } = hexCenter(col, row);
+    const pts = hexCorners(x, y);
+    const k = key(col, row);
+
+    const baseFill = isWall(col, row) ? "var(--wall)" :
+      (row < NEUTRAL_ROW_START ? "var(--empty-p1)" : row > NEUTRAL_ROW_END ? "var(--empty-p2)" : "var(--empty-neutral)");
+    const poly = el("polygon", {
+      points: pts,
+      fill: baseFill,
+      stroke: isWall(col, row) ? "var(--wall-edge)" : "var(--grid-line)",
+      "stroke-width": "1",
+    });
+    gBase.appendChild(poly);
+    baseFillCells.set(k, poly);
+
+    const overlay = el("polygon", { points: pts, fill: "transparent", "pointer-events": "none" });
+    gTerritory.appendChild(overlay);
+    territoryCells.set(k, overlay);
+
+    if (!isWall(col, row)) {
+      const hit = el("polygon", {
+        points: pts, fill: "transparent", stroke: "transparent", "stroke-width": "1.5", class: "hex-clickable",
+        "data-col": col, "data-row": row,
+      });
+      // [UI 2026-09-06] 一括指令（ドラッグで指示コピー）。mousedownで起点ユニットの指示を記憶し、
+      // ボタンを押したまま他の自分のユニットへドラッグすると同じ指示をコピーする
+      hit.addEventListener("mousedown", () => startDragPaint(col, row));
+      hit.addEventListener("mouseenter", (e) => { if (e.buttons === 1) applyDragPaint(col, row); });
+      hit.addEventListener("click", () => {
+        if (dragPaintMoved) { dragPaintMoved = false; return; } // ドラッグ終端でのクリック誤爆を無視
+        onHexClick(col, row);
+      });
+      gGrid.appendChild(hit);
+    }
+
+    const label = el("text", {
+      x, y: y + 3, "text-anchor": "middle", class: "coord-label", visibility: "hidden",
+    });
+    label.textContent = `${colLabel(col)}${row}`;
+    gCoordLabels.appendChild(label);
+    label.dataset.key = k;
+  }
+}
+
+// 軸ラベル（列: 上端 / 行: 左端）
+for (let col = 0; col < COLS; col += 1) {
+  const { x } = hexCenter(col, 0);
+  const t = el("text", { x, y: PADDING - 12, "text-anchor": "middle", class: "axis-label" });
+  t.textContent = colLabel(col);
+  gAxis.appendChild(t);
+}
+for (let row = 0; row < ROWS; row++) {
+  const { y } = hexCenter(0, row);
+  const t = el("text", { x: 10, y: y + 3, "text-anchor": "middle", class: "axis-label" });
+  t.textContent = row;
+  gAxis.appendChild(t);
+}
+// 中立地帯の境界線（P1側/中立の間・中立/P2側の間）の目印
+for (const boundaryRow of [NEUTRAL_ROW_START - 1, NEUTRAL_ROW_END]) {
+  const y = hexCenter(0, boundaryRow).y + VERT / 2 + HEX_SIZE * 0.5;
+  const line = el("line", {
+    x1: 2, x2: svgW - 2, y1: y, y2: y,
+    stroke: "#ffd479", "stroke-width": "1", "stroke-dasharray": "4,3", opacity: "0.6",
+  });
+  svg.insertBefore(line, gMarkers);
+}
+// 中立地帯ラベル
+{
+  const yMid = (hexCenter(0, NEUTRAL_ROW_START).y + hexCenter(0, NEUTRAL_ROW_END).y) / 2;
+  const label = el("text", {
+    x: svgW / 2, y: yMid + 4, "text-anchor": "middle",
+    fill: "#ffd479", "font-size": "13", opacity: "0.55", "pointer-events": "none",
+  });
+  label.textContent = "中立地帯（拠点・自陣不可）";
+  svg.insertBefore(label, gMarkers);
+}
+
+// [UI 2026-08-25] 盤面マーカー（配置画面・戦闘画面共通）にキャラ画像を円形クリップで重ねる。
+// [UI 2026-09-03] 全身の立ち絵(<charId>.png)だと小さい丸の中では何のキャラか分かりづらいとのUC指摘を受け、
+// マーカーだけは顔アップの<charId>_face.pngを優先して使う（カード側の.h-bannerは従来どおり全身画像のまま）。
+// 顔画像が無ければ全身画像に、それも無ければ<image>を非表示にして下の色付き丸＋2文字ラベルにフォールバックする。
+// uidはSVG内でclipPathのidが衝突しないようにするためのキー（配置マーカーはunit.id、戦闘マーカーは`b-${entity.id}`等）。
+function appendCharMarkerImage(parentEl, charId, cx, cy, r, uid) {
+  const clipId = `charclip-${uid}`;
+  const clip = el("clipPath", { id: clipId });
+  const clipCircle = el("circle", { cx, cy, r });
+  clip.appendChild(clipCircle);
+  const img = el("image", {
+    x: cx - r, y: cy - r, width: r * 2, height: r * 2,
+    href: charFaceSrc(charId), "preserveAspectRatio": "xMidYMid slice",
+    "clip-path": `url(#${clipId})`, "pointer-events": "none",
+  });
+  let triedFullBody = false;
+  img.addEventListener("error", () => {
+    if (!triedFullBody) { triedFullBody = true; img.setAttribute("href", charImageSrc(charId)); }
+    else { img.style.display = "none"; }
+  });
+  parentEl.append(clip, img);
+  return { img, clipCircle };
+}
+
+// [UI 2026-09-06] UC要望「残りHPが配置画面時にも見えるようにしてほしい。削れたHPを次のラウンドで
+// 見てわかるように」への対応。配置画面のユニット・拠点マーカーの上に戦闘画面と同じ見た目のHPバーを描く
+// （新規配置ユニットはunit.hpが無いのでmaxHpそのまま=満タン表示になる）
+function appendMarkerHpBar(x, y, hp, maxHp) {
+  const ratio = Math.max(0, Math.min(1, hp / maxHp));
+  const barY = y - HEX_SIZE * 0.62 - 8;
+  const bg = el("rect", { x: x - 14, y: barY, width: "28", height: "4", fill: "#000", opacity: "0.5", rx: "1", "pointer-events": "none" });
+  const fill = el("rect", {
+    x: x - 14, y: barY, width: (28 * ratio).toFixed(1), height: "4",
+    fill: ratio > 0.5 ? "#4ade80" : ratio > 0.2 ? "#facc15" : "#ef4444", rx: "1", "pointer-events": "none",
+  });
+  gMarkers.append(bg, fill);
+}
+
+// [UI 2026-08-24] UC要望「配置したユニットの攻撃範囲を表示して、戦闘中も表示してほしい」への対応。
+// attackRangeCells()（既存の戦闘ロジック用の純粋関数、射撃N/射程ボーナスN/通常1マスを全て正しく解決する）を
+// そのまま流用し、各ユニットの範囲マスを陣営カラーの破線枠でオーバーレイ表示する。配置画面では常時表示
+// （既存の「自陣」塗りつぶしと視覚的に区別するため、あえて塗りつぶさず破線の枠のみにした）。
+// 戦闘画面では毎tickの位置更新後に呼び直して追従させる。
+function renderAttackRangeOverlay(unitList) {
+  gAttackRange.innerHTML = "";
+  for (const unit of unitList) {
+    if (unit.alive === false) continue; // 戦闘中に死亡したユニットの範囲は消す（配置中ユニットにaliveは無い＝常に表示）
+    const color = unit.owner === "player1" ? "var(--p1)" : "var(--p2)";
+    for (const c of attackRangeCells(unit)) {
+      const { x, y } = hexCenter(c.col, c.row);
+      const poly = el("polygon", {
+        points: hexCorners(x, y),
+        fill: "none", stroke: color, "stroke-width": "1.5",
+        "stroke-dasharray": "3,2", opacity: "0.8", "pointer-events": "none",
+      });
+      gAttackRange.appendChild(poly);
+    }
+  }
+}
+
+// [UI 2026-09-05] UC要望「トラッパーが罠を設置した場所に罠マークをつけてわかるようにしよう」への対応。
+// 罠は「相手からも見える」仕様（設計書§8スキル#6）なので、配置画面・戦闘画面どちらでも同じ#gTraps層に
+// 描く。一度置いたマスは重複して描かない（同じマスに何度置かれても罠の効果自体は変わらないため）
+const renderedTrapKeys = new Set();
+function addTrapMarker(col, row, owner) {
+  const k = key(col, row);
+  if (renderedTrapKeys.has(k)) return;
+  renderedTrapKeys.add(k);
+  const { x, y } = hexCenter(col, row);
+  const color = owner === "player1" ? "var(--p1)" : "var(--p2)";
+  const r = HEX_SIZE * 0.36;
+  const diamond = el("polygon", {
+    points: [[x, y - r], [x + r, y], [x, y + r], [x - r, y]].map(p => p.join(",")).join(" "),
+    fill: color, "fill-opacity": "0.7", stroke: "#fff", "stroke-width": "1", "pointer-events": "none",
+  });
+  const label = el("text", { x, y: y + 3, "text-anchor": "middle", fill: "#fff", "font-size": "7", "font-weight": "bold", "pointer-events": "none" });
+  label.textContent = "罠";
+  gTraps.append(diamond, label);
+}
+// 配置フェイズ開始時・戦闘リセット時に、前ラウンドから引き継いだ罠（persistentTraps）だけを描き直す。
+// 今回の戦闘中に新設された罠はここでクリアされる（tick0への巻き戻しと整合させるため）
+function seedTrapMarkersFromPersistent() {
+  gTraps.innerHTML = "";
+  renderedTrapKeys.clear();
+  for (const [k, owner] of Object.entries(persistentTraps)) {
+    const [col, row] = k.split(",").map(Number);
+    addTrapMarker(col, row, owner);
+  }
+}
+
+function render() {
+  // 空きマス色 + 壁は固定なので base 層は初期描画のみで良いが、
+  // 自陣オーバーレイ・拠点/キャラマーカーは毎回更新する。
+  seedTrapMarkersFromPersistent(); // [UI 2026-09-05] 前ラウンドから引き継いだ罠は配置フェイズでも見える
+  const terr1 = computeTerritory("player1");
+  const terr2 = computeTerritory("player2");
+
+  for (const [k, poly] of territoryCells) {
+    if (terr1.has(k)) {
+      poly.setAttribute("fill", "var(--p1)");
+      poly.setAttribute("fill-opacity", "0.28");
+    } else if (terr2.has(k)) {
+      poly.setAttribute("fill", "var(--p2)");
+      poly.setAttribute("fill-opacity", "0.28");
+    } else {
+      poly.setAttribute("fill", "transparent");
+    }
+  }
+
+  gMarkers.innerHTML = "";
+  for (const player of ["player1", "player2"]) {
+    const color = player === "player1" ? "var(--p1)" : "var(--p2)";
+    const dark = player === "player1" ? "var(--p1-dark)" : "var(--p2-dark)";
+    for (const b of bases[player]) {
+      const { x, y } = hexCenter(b.col, b.row);
+      // [UI 2026-09-06] pointer-events:noneを追加。無いとマーカー自体がクリックを奪ってしまい、
+      // 下にあるヘックスのクリック判定（ユニット選択等）に一切届かなかった
+      const circle = el("circle", { cx: x, cy: y, r: HEX_SIZE * 0.62, fill: color, stroke: dark, "stroke-width": "2", "pointer-events": "none" });
+      const label = el("text", { x, y: y + 4, "text-anchor": "middle", fill: "#fff", "font-size": "10", "font-weight": "bold", "pointer-events": "none" });
+      label.textContent = "拠";
+      gMarkers.append(circle, label);
+      appendMarkerHpBar(x, y, b.hp != null ? b.hp : 300, 300); // [UI 2026-09-06] 前ラウンドで削れた拠点HPを配置画面でも見えるように
+    }
+  }
+
+  for (const unit of units) {
+    const char = getCharacter(unit.charId);
+    const { x, y } = hexCenter(unit.col, unit.row);
+    const color = unit.owner === "player1" ? "var(--p1)" : "var(--p2)";
+    const dark = unit.owner === "player1" ? "var(--p1-dark)" : "var(--p2-dark)";
+    const isSelected = unit.id === selectedUnitId;
+
+    if (unit.purpose === "goto" && unit.targetHex) {
+      const t = hexCenter(unit.targetHex.col, unit.targetHex.row);
+      const line = el("line", { x1: x, y1: y, x2: t.x, y2: t.y, stroke: color, "stroke-width": "1", "stroke-dasharray": "3,3", opacity: "0.6" });
+      const flag = el("text", { x: t.x, y: t.y + 4, "text-anchor": "middle", fill: color, "font-size": "12", "font-weight": "bold", "pointer-events": "none" });
+      flag.textContent = "×";
+      gMarkers.append(line, flag);
+    }
+
+    const circle = el("circle", {
+      cx: x, cy: y, r: HEX_SIZE * 0.62, fill: color,
+      stroke: isSelected ? "#ffd479" : dark, "stroke-width": isSelected ? "3" : "2",
+      "pointer-events": "none", // [UI 2026-09-06] 同上。ユニットマーカーもクリックを奪わないようにする
+    });
+    const label = el("text", { x, y: y + 3, "text-anchor": "middle", fill: "#fff", "font-size": "8", "font-weight": "bold", "pointer-events": "none" });
+    label.textContent = char.name.slice(0, 2);
+    const purposeMark = { rush: "突", guard: "守", chase: "追", goto: "指" }[unit.purpose];
+    const pText = el("text", { x, y: y - HEX_SIZE * 0.8, "text-anchor": "middle", fill: "#ffd479", "font-size": "8", "pointer-events": "none" });
+    pText.textContent = purposeMark;
+    gMarkers.append(circle, label);
+    appendCharMarkerImage(gMarkers, unit.charId, x, y, HEX_SIZE * 0.62, `p-${unit.id}`); // [UI 2026-08-25] / [UI 2026-09-02] r拡大
+    gMarkers.append(pText);
+    appendMarkerHpBar(x, y, unit.hp != null ? unit.hp : char.hp, char.hp); // [UI 2026-09-06] 前ラウンドで削れたHPを配置画面でも見えるように
+
+    if (unit.facing !== null && unit.facing !== undefined) {
+      const dir = HEX_DIRECTIONS[unit.facing];
+      const wx = x + Math.cos(dir.angle * Math.PI / 180) * HEX_SIZE * 0.9;
+      const wy = y + Math.sin(dir.angle * Math.PI / 180) * HEX_SIZE * 0.9;
+      const wedge = el("circle", { cx: wx, cy: wy, r: "2.5", fill: "#ffd479", "pointer-events": "none" });
+      gMarkers.appendChild(wedge);
+    }
+  }
+
+  renderAttackRangeOverlay(units); // [UI 2026-08-24] 配置済みキャラの攻撃範囲を常時表示
+
+  document.getElementById("roundLabel").textContent = currentRound;
+  renderBaseHp();
+
+  renderCharList();
+  renderQueueList();
+  renderUnitEditPanel();
+  pushMyPlacement(); // [P5] ルーム参加中のみ、自分側の配置状態をFirebaseへ反映（未参加時・戦闘中は何もしない）
+}
+
+// [UI] 拠点合計HPバー（2026-08-23）。拠点は各プレイヤー常に最大2個・1個300HP（設計書§2）が前提。
+// 陥落した拠点はbases配列から取り除かれる実装なので、生存分のhp合計をそのまま「最大に対する割合」として描画すれば、
+// 陥落による目減りも自然に表現できる
+function renderBaseHp() {
+  const totals = player => bases[player].reduce((s, b) => s + (b.hp != null ? b.hp : 300), 0);
+  const group = document.getElementById("baseHpGroup");
+  group.innerHTML = ["player1", "player2"].map(p => {
+    const cur = totals(p);
+    const max = 600;
+    const pct = Math.max(0, Math.min(100, (cur / max) * 100));
+    const tag = p === "player1" ? "p1" : "p2";
+    const label = p === "player1" ? "P1" : "P2";
+    return `<div class="base-hp ${tag}"><span class="label">${label}</span><span class="bar"><i style="width:${pct}%"></i></span><span class="n">${cur}/${max}</span></div>`;
+  }).join("");
+}
+
+function renderCharList() {
+  const container = document.getElementById("charList");
+  container.innerHTML = "";
+  const pool = CHARACTERS.filter(c => currentPool.includes(c.id));
+  if (pool.length === 0) {
+    container.innerHTML = `<div class="strip-empty">購入可能なキャラがいません。</div>`;
+  }
+  for (const char of pool) {
+    const affordable = credits[currentPlayer] >= char.price;
+    const card = document.createElement("div");
+    card.className = "hcard" + (affordable ? "" : " unaffordable");
+    card.innerHTML =
+      `<div class="h-banner${currentPlayer === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}<span class="h-price">${char.price}cr</span></div>` +
+      `<div class="h-body">` +
+      `<div class="h-name">${char.name}</div>` +
+      statBarsHtml(char) +
+      `<div class="skill-pills">${skillPillsHtml(char.skills)}</div>` +
+      `</div>`;
+    card.title = allSkillsTooltip(char.skills);
+    if (affordable) card.addEventListener("click", () => buyCharacter(currentPlayer, char.id));
+    container.appendChild(card);
+  }
+  document.getElementById("creditsLabel").textContent = credits[currentPlayer];
+  document.getElementById("creditsLabelShop").textContent = credits[currentPlayer];
+}
+
+// [UI 2026-08-23] 配置待ち（未配置）カードを目立たせつつ、配置済みキャラも記録として並べて表示する。
+// UC指摘: 「購入して配置したら上から消えてしまう。配置済みのキャラも記載してほしい。配置していない
+// キャラはハイライトとかで目立たせること」への対応
+function renderQueueList() {
+  const container = document.getElementById("queueList");
+  container.innerHTML = "";
+  const queuedList = queue[currentPlayer];
+  const placedList = units.filter(u => u.owner === currentPlayer);
+  if (queuedList.length === 0 && placedList.length === 0) {
+    container.innerHTML = `<div class="strip-empty">配置待ち・配置済みのキャラはいません。</div>`;
+    return;
+  }
+  // 未配置（配置待ち）: アクセントカラーで強調し先頭に並べる
+  for (const entry of queuedList) {
+    const char = getCharacter(entry.charId);
+    const card = document.createElement("div");
+    card.className = "hcard queued" + (selectedQueueEntry && selectedQueueEntry.qid === entry.qid ? " selected" : "");
+    card.innerHTML =
+      `<div class="h-banner${currentPlayer === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}<span class="h-badge">未配置</span></div>` +
+      `<div class="h-body">` +
+      `<div class="h-name">${char.name}</div>` +
+      statBarsHtml(char) +
+      `<div class="skill-pills">${skillPillsHtml(char.skills)}</div>` +
+      `<div class="h-hint">盤面をクリックで配置 →</div>` +
+      `<button type="button" class="h-return-btn">返却</button>` +
+      `</div>`;
+    card.title = allSkillsTooltip(char.skills);
+    card.addEventListener("click", () => selectQueueEntry(currentPlayer, entry.qid));
+    card.querySelector(".h-return-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      returnQueuedUnit(currentPlayer, entry.qid);
+    });
+    container.appendChild(card);
+  }
+  if (queuedList.length > 0 && placedList.length > 0) {
+    const divider = document.createElement("div");
+    divider.className = "strip-divider";
+    container.appendChild(divider);
+  }
+  // 配置済み: 目立たなくし、クリックで選択→指示編集パネルへ（盤面クリックと同じ挙動）
+  for (const unit of placedList) {
+    const char = getCharacter(unit.charId);
+    const card = document.createElement("div");
+    card.className = "hcard placed" + (selectedUnitId === unit.id ? " selected" : "");
+    card.innerHTML =
+      `<div class="h-banner${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
+      `<div class="h-body">` +
+      `<div class="h-name">${char.name}</div>` +
+      statBarsHtml(char) +
+      `<div class="skill-pills">${skillPillsHtml(char.skills)}</div>` +
+      `<div class="h-hint">配置済み・${PURPOSE_SHORT[unit.purpose] || ""}</div>` +
+      `</div>`;
+    card.title = allSkillsTooltip(char.skills);
+    card.addEventListener("click", () => selectUnitForEdit(unit.id));
+    container.appendChild(card);
+  }
+}
+
+function renderUnitEditPanel() {
+  const panel = document.getElementById("unitEditPanel");
+  const content = document.getElementById("unitEditContent");
+  const unit = units.find(u => u.id === selectedUnitId);
+  if (!unit) { panel.style.display = "none"; return; }
+  panel.style.display = "block"; // [UI] ユニット選択中のみ下段に指示パネルを表示（購入ボタンは常時上部バーに常設）
+  const char = getCharacter(unit.charId);
+  const ownerLabel = unit.owner === "player1" ? "プレイヤー1" : "プレイヤー2";
+
+  let html = `<div class="inspector-who">` +
+    `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
+    `<div class="meta"><div class="n">${char.name}</div>` +
+    `<div class="p">${ownerLabel}・col${unit.col},row${unit.row}・HP${char.hp}/攻${char.atk}/行動${char.ap}</div></div>` +
+    `</div>`;
+  html += `<div class="purpose-row" id="purposeGroup">`;
+  for (const p of PURPOSES) {
+    html += `<button type="button" class="purpose-chip${unit.purpose === p.id ? " active" : ""}" data-purpose="${p.id}">${p.label}</button>`;
+  }
+  html += `</div>`;
+  // [UI 2026-09-05] UC要望により「目標マスを指定」ボタンを廃止。「指定マスへ向かう」チップを押した
+  // 瞬間に即座に目標マス選択モードへ入る（setUnitPurpose参照）。ここには現在の目標だけを表示する
+  if (unit.purpose === "goto" && unit.targetHex) {
+    html += `<span class="hint">目標: col${unit.targetHex.col},row${unit.targetHex.row}（チップを押し直すと選び直せます）</span>`;
+  }
+  if (needsFacing(char)) {
+    html += `<div class="facing-row" id="directionGrid"></div>`;
+  }
+  // [P6] 前ラウンドから引き継いだユニットは再配置できない（設計書§7の再配置制度は2026-09-06にUC判断で撤廃）。
+  // 今ラウンドで新たに購入・配置したユニットのみ、移動・返却の対象になる
+  if (currentRound > 1 && roundStartUnitIds.has(unit.id)) {
+    html += `<span class="hint">前ラウンドから引き継いだキャラは配置を変更できません。</span>`;
+  } else {
+    // [UI 2026-09-05] 前ラウンドから引き継いだユニットではなく、今ラウンドで新たに購入・配置した
+    // ユニットのみ返却可能（roundStartUnitIdsに含まれない＝このラウンドの新規配置という判定を再配置と共用）
+    const basePrice = getCharacter(unit.charId).price;
+    html += `<button id="moveUnitBtn" class="close-btn">配置位置を変える</button>`;
+    html += `<button id="returnUnitBtn" class="close-btn">返却する（クレジット${basePrice}を返金）</button>`;
+  }
+  html += `<div class="inspector-spacer"></div>`;
+  html += `<button id="deselectUnitBtn" class="close-btn">選択解除</button>`;
+  content.innerHTML = html;
+
+  content.querySelectorAll(".purpose-chip").forEach(btn => {
+    btn.addEventListener("click", () => setUnitPurpose(unit.id, btn.dataset.purpose));
+  });
+
+  const returnUnitBtn = content.querySelector("#returnUnitBtn");
+  if (returnUnitBtn) returnUnitBtn.addEventListener("click", () => returnPlacedUnit(unit.id));
+
+  const moveUnitBtn = content.querySelector("#moveUnitBtn");
+  if (moveUnitBtn) moveUnitBtn.addEventListener("click", () => startMoveUnit(unit.id));
+
+  const dirGrid = content.querySelector("#directionGrid");
+  if (dirGrid) {
+    HEX_DIRECTIONS.forEach((d, i) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = d.arrow;
+      btn.className = unit.facing === i ? "active" : "";
+      btn.addEventListener("click", () => setUnitFacing(unit.id, i));
+      dirGrid.appendChild(btn);
+    });
+  }
+
+  content.querySelector("#deselectUnitBtn").addEventListener("click", () => {
+    selectedUnitId = null;
+    render();
+  });
+}
+
+function showStatus(msg) {
+  document.getElementById("statusMsg").textContent = msg;
+}
+
+function handlePlaceUnit(col, row) {
+  const player = currentPlayer;
+  const char = getCharacter(selectedQueueEntry.charId);
+  if (isWall(col, row)) { showStatus("壁マスには配置できません。"); return; }
+  if (!computeTerritory(player).has(key(col, row))) { showStatus("キャラは自陣（拠点周辺3マス）にのみ配置できます。"); return; }
+  if (isBaseAt(col, row) || unitAt(col, row)) { showStatus("そのマスには既に何か配置されています。"); return; }
+
+  // [バグ修正 2026-08-23] idは`${owner}_${連番}`で生成する。以前は単なる連番(unitSeq)で、
+  // ホストとゲストがそれぞれ自分のタブで独立に1から数えるため、両者の1体目・2体目…が同じidになっていた。
+  // 戦闘開始時にstartBattleFromRoom()がP1・P2のユニットを1つの配列にマージすると、idが衝突した
+  // ユニット同士が表示側(Map: battleMarkerEls/entityById)で同じマーカー・ログ表示を取り合ってしまい、
+  // 「敵陣へ瞬間移動」「味方で戦闘しているように見える」「一方が全く動かない」という不具合になっていた
+  // （UC報告・実機再現で特定）。owner文字列を含めることで衝突を構造的に無くす。
+  units.push({
+    // [UI 2026-09-05] UC要望によりデフォルトの指示を「守る」→「敵拠点へ最短で向かう」に変更
+    id: `${player}_${++unitSeq}`, owner: player, charId: char.id, col, row,
+    purpose: "rush", targetHex: null, facing: needsFacing(char) ? 0 : null,
+  });
+  queue[player] = queue[player].filter(q => q.qid !== selectedQueueEntry.qid);
+  mode = "idle";
+  selectedQueueEntry = null;
+  showStatus(`${char.name}を配置しました（指示: 敵拠点へ最短で向かう）。必要なら変更してください。`);
+  render();
+}
+
+function handleSetTarget(col, row) {
+  if (isWall(col, row)) { showStatus("壁マスは目標に指定できません。"); return; }
+  const unit = units.find(u => u.id === selectedUnitId);
+  if (!unit) { mode = "idle"; render(); return; }
+  unit.targetHex = { col, row };
+  mode = "idle";
+  showStatus("目標マスを設定しました。");
+  render();
+}
+
+function selectUnitForEdit(unitId) {
+  const unit = units.find(u => u.id === unitId);
+  if (!unit) return;
+  if (unit.owner !== currentPlayer) { showStatus("自分のキャラのみ選択できます（設置プレイヤーを切り替えてください）。"); return; }
+  selectedUnitId = unitId;
+  showStatus("");
+  render();
+}
+
+function buyCharacter(player, charId) {
+  const char = getCharacter(charId); // 価格・名前は常に基礎値（購入コスト自体は星で変わらない）
+  if (credits[player] < char.price) { showStatus("クレジットが足りません。"); return; }
+  credits[player] -= char.price;
+  queue[player].push({ qid: ++queueSeq, charId });
+  showStatus(`${char.name}を購入しました（配置待ちに追加）。`);
+  render();
+}
+
+function selectQueueEntry(player, qid) {
+  const entry = queue[player].find(q => q.qid === qid);
+  if (!entry) return;
+  mode = "placeUnit";
+  selectedQueueEntry = entry;
+  showStatus(`盤面の自陣内をクリックして${getCharacter(entry.charId).name}を配置してください。`);
+  render();
+}
+
+// [UI 2026-09-05] 「購入すると決まってしまうのはよくない」というUC指摘への対応。
+// 配置待ち（未配置）キューからの返却。クレジット全額返金
+// （購入キューはラウンドをまたがない＝queueは常に「今ラウンドの未配置分」のみなので無条件で返却可）
+function returnQueuedUnit(player, qid) {
+  const idx = queue[player].findIndex(q => q.qid === qid);
+  if (idx === -1) return;
+  const entry = queue[player][idx];
+  const char = getCharacter(entry.charId);
+  queue[player].splice(idx, 1);
+  credits[player] += char.price;
+  if (selectedQueueEntry && selectedQueueEntry.qid === qid) { selectedQueueEntry = null; mode = "idle"; }
+  showStatus(`${char.name}を返却しました（クレジット${char.price}を返金）。`);
+  render();
+}
+
+// [UI 2026-09-05] 盤面に配置済みのユニットの返却。UC確認済み: 今ラウンドで新たに購入・配置した
+// ユニットのみ対象（前ラウンドから引き継いだユニットは対象外＝一切位置変更不可）。この区別は
+// `roundStartUnitIds`（そのラウンド開始時点で盤上にいたか）で行う
+function returnPlacedUnit(unitId) {
+  const idx = units.findIndex(u => u.id === unitId);
+  if (idx === -1) return;
+  const unit = units[idx];
+  const char = getCharacter(unit.charId);
+  units.splice(idx, 1);
+  credits[unit.owner] += char.price;
+  if (selectedUnitId === unitId) selectedUnitId = null;
+  showStatus(`${char.name}を返却しました（クレジット${char.price}を返金）。`);
+  render();
+}
+
+function setUnitPurpose(unitId, purpose) {
+  const unit = units.find(u => u.id === unitId);
+  if (!unit) return;
+  unit.purpose = purpose;
+  unit.targetHex = null;
+  if (purpose === "goto") {
+    // [UI 2026-09-05] UC要望により「目標マスを指定」ボタンを廃止し、チップを押した瞬間に
+    // 即座に目標マス選択モードへ入るようにした（再度押せば選び直しにもなる）
+    selectedUnitId = unitId;
+    mode = "setTarget";
+    showStatus("盤面をクリックして目標マスを指定してください。");
+  }
+  render();
+}
+
+// [UI 2026-09-05] UC要望「一度配置をしたら動かせないのがやだ、何度でも配置位置を変えられるように」
+// への対応。今ラウンドで新たに購入・配置したユニット（roundStartUnitIdsに含まれない）専用の、
+// 回数制限なしの移動。前ラウンドからの引き継ぎユニットは対象外（2026-09-06に再配置制度自体を撤廃、
+// 引き継ぎユニットは一切位置を変更できない仕様に変更）
+function startMoveUnit(unitId) {
+  selectedUnitId = unitId;
+  mode = "moveUnit";
+  showStatus("盤面の自陣内をクリックして移動先を指定してください。");
+  render();
+}
+
+function handleMoveUnit(col, row) {
+  const unit = units.find(u => u.id === selectedUnitId);
+  if (!unit) { mode = "idle"; render(); return; }
+  const player = unit.owner;
+  if (isWall(col, row)) { showStatus("壁マスには配置できません。"); return; }
+  if (!computeTerritory(player).has(key(col, row))) { showStatus("移動先は自陣（拠点周辺3マス）にのみ指定できます。"); return; }
+  if (isBaseAt(col, row) || unitAt(col, row)) { showStatus("そのマスには既に何か配置されています。"); return; }
+  unit.col = col; unit.row = row;
+  mode = "idle";
+  showStatus(`${getCharacter(unit.charId).name}を移動しました。`);
+  render();
+}
+
+function setUnitFacing(unitId, dirIndex) {
+  const unit = units.find(u => u.id === unitId);
+  if (!unit) return;
+  unit.facing = dirIndex;
+  render();
+}
+
+// [UI 2026-09-06] UC要望「（できるならば）一括指令。マウスドラッグで一体のキャラの指示を他にも同じに」
+// への対応。事前選択は不要: ドラッグの起点になったユニットの「今の指示」を、ドラッグでなぞった
+// 自分の他のユニットにそのままコピーする。「指定マスへ」は目標マスがユニットごとに違うためコピー対象外
+let dragPaintPurpose = null; // ドラッグ中でなければnull
+let dragPaintOwner = null;
+let dragPaintMoved = false; // trueなら「クリックではなくドラッグだった」印。終端hexのclickを1回だけ無視する
+let dragPaintCount = 0;
+
+function startDragPaint(col, row) {
+  if (battleMode || mode !== "idle") return;
+  const unit = unitAt(col, row);
+  if (!unit || unit.owner !== currentPlayer || unit.purpose === "goto") { dragPaintPurpose = null; return; }
+  dragPaintPurpose = unit.purpose;
+  dragPaintOwner = unit.owner;
+  dragPaintCount = 0;
+}
+function applyDragPaint(col, row) {
+  if (!dragPaintPurpose) return;
+  const target = unitAt(col, row);
+  if (!target || target.owner !== dragPaintOwner || target.purpose === dragPaintPurpose) return;
+  target.purpose = dragPaintPurpose;
+  target.targetHex = null;
+  dragPaintMoved = true;
+  dragPaintCount++;
+  render();
+}
+document.addEventListener("mouseup", () => {
+  if (dragPaintPurpose && dragPaintCount > 0) {
+    showStatus(`${dragPaintCount}体に指示「${PURPOSES.find(p => p.id === dragPaintPurpose)?.label || dragPaintPurpose}」をコピーしました。`);
+  }
+  dragPaintPurpose = null;
+  dragPaintOwner = null;
+  // [バグ修正 2026-09-06] mouseup直後に同期的にclickイベントが発火する場合があり、そこで
+  // dragPaintMovedを見て「ドラッグ由来のクリックは無視する」判定をしたいので、この場では
+  // まだリセットしない。次のイベントループでリセットすることで、複数の異なるマスにまたがる
+  // ドラッグ（＝clickが発火しないケース）でもフラグが残り続けて以後のクリックが全部無視される
+  // 事故を防ぐ（実機で発生・確認済み）
+  setTimeout(() => { dragPaintMoved = false; }, 0);
+});
+
+function onHexClick(col, row) {
+  if (battleMode) return; // 戦闘再生中は配置フェイズの操作を無効化
+  if (mode === "placeUnit") { handlePlaceUnit(col, row); return; }
+  if (mode === "setTarget") { handleSetTarget(col, row); return; }
+  if (mode === "moveUnit") { handleMoveUnit(col, row); return; }
+  const existingUnit = unitAt(col, row);
+  if (existingUnit) { selectUnitForEdit(existingUnit.id); return; }
+  // 拠点は固定位置のため、それ以外のクリック（空きマス等）は何もしない
+}
+
+document.getElementById("playerSelect").addEventListener("change", (e) => {
+  currentPlayer = e.target.value;
+  mode = "idle";
+  selectedQueueEntry = null;
+  selectedUnitId = null;
+  showStatus("");
+  render();
+});
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  resetGameState();
+  showStatus("全てリセットしました。");
+  render();
+});
+
+document.getElementById("coordToggle").addEventListener("change", (e) => {
+  const vis = e.target.checked ? "visible" : "hidden";
+  for (const t of gCoordLabels.children) t.setAttribute("visibility", vis);
+});
+
+// [UI 2026-09-05] キャラ購入モーダルの開閉
+const shopScrim = document.getElementById("shopScrim");
+document.getElementById("openShopBtn").addEventListener("click", () => shopScrim.classList.add("open"));
+document.getElementById("closeShopBtn").addEventListener("click", () => shopScrim.classList.remove("open"));
+shopScrim.addEventListener("click", (e) => { if (e.target === shopScrim) shopScrim.classList.remove("open"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") shopScrim.classList.remove("open"); });
+
+/* ==================== P4: 戦闘演出（ログ再生専用。ロジックの再計算はしない） ==================== */
+
+let battleMode = false;
+let battleResult = null;   // simulateBattle() の戻り値そのもの（正典）
+let roundOutcome = null;   // [P6] interpretRoundOutcome()の戻り値（即時終了解釈込みの本当の決着）
+let displayState = null;   // ログを適用しながら進める表示用の状態（initBattleStateの再利用）
+let eventsByTick = [];     // eventsByTick[tick] = そのtickのイベント配列
+let playbackTick = 0;
+let playbackTimer = null;
+let playbackSpeed = 1;
+const battleMarkerEls = new Map(); // entityId -> {g, circle, label, hpFill, poisonDot, r, isBase}
+
+function tweenAttr(node, attrs, duration) {
+  const start = {};
+  for (const k in attrs) start[k] = parseFloat(node.getAttribute(k)) || 0;
+  const t0 = performance.now();
+  function frame(now) {
+    const t = Math.min(1, (now - t0) / duration);
+    for (const k in attrs) node.setAttribute(k, start[k] + (attrs[k] - start[k]) * t);
+    if (t < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function findDisplayEntity(id) {
+  return displayState.units.find(u => u.id === id) || displayState.bases.find(b => b.id === id);
+}
+
+function battleColor(owner) { return owner === "player1" ? "var(--p1)" : "var(--p2)"; }
+function battleDark(owner) { return owner === "player1" ? "var(--p1-dark)" : "var(--p2-dark)"; }
+
+function createBattleMarker(entity, isBase) {
+  const { x, y } = hexCenter(entity.col, entity.row);
+  const r = HEX_SIZE * 0.62; // [UI 2026-09-02] 以前はユニット0.52/拠点0.62で差があったが、ユニットも拠点と同じ大きさに統一
+  const g = el("g", {});
+  const circle = el("circle", { cx: x, cy: y, r, fill: battleColor(entity.owner), stroke: battleDark(entity.owner), "stroke-width": "2" });
+  const label = el("text", { x, y: y + 3, "text-anchor": "middle", fill: "#fff", "font-size": isBase ? "10" : "8", "font-weight": "bold", "pointer-events": "none" });
+  label.textContent = isBase ? "拠" : getCharacter(entity.charId).name.slice(0, 2);
+  g.append(circle, label);
+  // [UI 2026-08-25] 拠点以外はキャラ画像を重ねる（画像が無ければlabelの2文字表示のまま）
+  const charImg = isBase ? null : appendCharMarkerImage(g, entity.charId, x, y, r, `b-${entity.id}`);
+  const hpBg = el("rect", { x: x - 14, y: y - r - 8, width: "28", height: "4", fill: "#000", opacity: "0.5", rx: "1" });
+  const hpFill = el("rect", { x: x - 14, y: y - r - 8, width: "28", height: "4", fill: "#4ade80", rx: "1" });
+  const poisonDot = el("circle", { cx: x + r * 0.6, cy: y - r * 0.6, r: "3", fill: "#a855f7", visibility: entity.poisoned ? "visible" : "hidden" });
+  g.append(hpBg, hpFill, poisonDot);
+  gBattleUnits.appendChild(g);
+  battleMarkerEls.set(entity.id, { g, circle, label, hpFill, poisonDot, r, isBase, charImg });
+}
+
+function updateMarkerHpBar(entity) {
+  const m = battleMarkerEls.get(entity.id);
+  if (!m) return;
+  const ratio = Math.max(0, entity.hp / entity.maxHp);
+  m.hpFill.setAttribute("width", (28 * ratio).toFixed(1));
+  m.hpFill.setAttribute("fill", ratio > 0.5 ? "#4ade80" : ratio > 0.2 ? "#facc15" : "#ef4444");
+}
+
+// [UI 2026-09-05] UC要望「行動力が残っているキャラはハイライトを、なくなったキャラは少し暗くして
+// 見分けをつけられるように」への対応。R4のみHP→行動力変換で行動力0でも生きている限り動けるため、
+// その場合は暗くしない
+function updateMarkerActivity(entity) {
+  const m = battleMarkerEls.get(entity.id);
+  if (!m || m.isBase || !entity.alive) return; // 拠点・死亡（death-fadeで別途表現）は対象外
+  const canStillAct = entity.ap > 0 || currentRound === 4;
+  m.g.style.opacity = canStillAct ? "" : "0.4";
+}
+
+function moveMarkerTo(entity, duration) {
+  const m = battleMarkerEls.get(entity.id);
+  if (!m) return;
+  const p = hexCenter(entity.col, entity.row);
+  tweenAttr(m.circle, { cx: p.x, cy: p.y }, duration);
+  tweenAttr(m.label, { x: p.x, y: p.y + 3 }, duration);
+  tweenAttr(m.hpFill, { x: p.x - 14, y: p.y - m.r - 8 }, duration);
+  tweenAttr(m.poisonDot, { cx: p.x + m.r * 0.6, cy: p.y - m.r * 0.6 }, duration);
+  if (m.charImg) { // [UI 2026-08-25] キャラ画像・そのクリップ円も追従させる
+    tweenAttr(m.charImg.clipCircle, { cx: p.x, cy: p.y }, duration);
+    tweenAttr(m.charImg.img, { x: p.x - m.r, y: p.y - m.r }, duration);
+  }
+}
+
+function spawnFloatingNumber(entity, text, color) {
+  const { x, y } = hexCenter(entity.col, entity.row);
+  const t = el("text", { x, y: y - 10, "text-anchor": "middle", fill: color, "font-size": "11", "font-weight": "bold", class: "dmg-float" });
+  t.textContent = text;
+  gBattleFx.appendChild(t);
+  setTimeout(() => t.remove(), 950);
+}
+
+// [UI 2026-09-06] UC要望「スキルを発動したとき、発動した場所にふわっとスキル名を出してほしい」への対応。
+// ダメージ数字（spawnFloatingNumber、entity中心のやや上）と重ならないよう、さらに上・小さめ・金色で表示する
+function spawnSkillLabel(col, row, skillName) {
+  const { x, y } = hexCenter(col, row);
+  const t = el("text", { x, y: y - HEX_SIZE - 10, "text-anchor": "middle", fill: "#ffd479", "font-size": "9", "font-weight": "bold", class: "dmg-float" });
+  t.textContent = skillName;
+  gBattleFx.appendChild(t);
+  setTimeout(() => t.remove(), 950);
+}
+
+function spawnAttackFlash(attacker, target) {
+  if (!attacker || !target) return;
+  const a = hexCenter(attacker.col, attacker.row), b = hexCenter(target.col, target.row);
+  const line = el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: battleColor(attacker.owner), "stroke-width": "2", class: "atk-line" });
+  gBattleFx.appendChild(line);
+  setTimeout(() => line.remove(), 400);
+}
+
+const EVENT_LABELS = {
+  move: "移動", attack: "攻撃", damage: "ダメージ", death: "撃破", baseDestroyed: "拠点陥落",
+  poison: "毒付与", push: "押し込み", pull: "引き寄せ", linkedAttack: "連携攻撃", heal: "回復",
+  followMove: "追従移動", musouRecover: "無双発動", purposeChange: "指示変更", stay: "停止", trapSet: "罠設置",
+};
+
+// [UI 2026-08-23] キャラ名だけだと両陣営が同じキャラを使っている時に「味方同士で戦闘しているように見える」
+// とのUC報告があったため、拠点と同様にキャラにも(P1)/(P2)を付けて所属を明示する
+function entityLabel(id) {
+  const entity = findDisplayEntity(id);
+  if (!entity) return String(id);
+  const tag = entity.owner === "player1" ? "P1" : "P2";
+  return entity.isBase ? `拠点(${tag})` : `${getCharacter(entity.charId).name}(${tag})`;
+}
+
+function appendLogLine(ev) {
+  const feed = document.getElementById("battleLogFeed");
+  const div = document.createElement("div");
+  let text = `[t${ev.tick}] ${EVENT_LABELS[ev.type] || ev.type}`;
+  if (ev.unitId != null) text += ` ${entityLabel(ev.unitId)}`;
+  if (ev.targetId != null) text += ` → ${entityLabel(ev.targetId)}`;
+  if (ev.amount != null) text += ` (${ev.amount})`;
+  div.textContent = text;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function applyEventsForTick(tickEvents) {
+  const duration = 350 / playbackSpeed;
+  for (const ev of tickEvents) {
+    switch (ev.type) {
+      case "move": case "push": case "pull": case "followMove": {
+        const entity = findDisplayEntity(ev.unitId != null ? ev.unitId : ev.targetId);
+        entity.col = ev.to.col; entity.row = ev.to.row;
+        moveMarkerTo(entity, duration);
+        if (ev.type === "move" && ev.apCost) { // [UI 2026-09-05] 行動力の消費を反映（ハイライト判定用）
+          entity.ap -= ev.apCost;
+          updateMarkerActivity(entity);
+        }
+        // [UI 2026-09-06] スキル発動位置にスキル名を表示（移動後の位置に表示）
+        if (ev.type === "followMove") spawnSkillLabel(entity.col, entity.row, "追従");
+        else if (ev.type === "push") spawnSkillLabel(entity.col, entity.row, "押し込み");
+        else if (ev.type === "pull") spawnSkillLabel(entity.col, entity.row, "引き寄せ");
+        break;
+      }
+      case "attack": { // [UI 2026-09-05] 攻撃でも行動力を消費するのでハイライト判定を更新
+        const entity = findDisplayEntity(ev.unitId);
+        if (ev.apCost) entity.ap -= ev.apCost;
+        updateMarkerActivity(entity);
+        break;
+      }
+      case "linkedAttack": { // [UI 2026-09-06] 連携攻撃発動時にスキル名を表示
+        const entity = findDisplayEntity(ev.unitId);
+        if (entity) spawnSkillLabel(entity.col, entity.row, ev.skill || "連携攻撃");
+        break;
+      }
+      case "damage": {
+        const entity = findDisplayEntity(ev.targetId);
+        entity.hp = ev.targetHpAfter;
+        updateMarkerHpBar(entity);
+        spawnFloatingNumber(entity, `-${ev.amount}`, "#ef4444");
+        spawnAttackFlash(findDisplayEntity(ev.attackerId), entity);
+        break;
+      }
+      case "heal": {
+        const entity = findDisplayEntity(ev.targetId);
+        entity.hp = Math.min(entity.maxHp, entity.hp + ev.amount);
+        updateMarkerHpBar(entity);
+        spawnFloatingNumber(entity, `+${ev.amount}`, "#4ade80");
+        break;
+      }
+      case "death": case "baseDestroyed": {
+        const entity = findDisplayEntity(ev.unitId);
+        entity.alive = false;
+        const m = battleMarkerEls.get(entity.id);
+        if (m) m.g.classList.add("death-fade");
+        break;
+      }
+      case "poison": {
+        const entity = findDisplayEntity(ev.targetId);
+        entity.poisoned = true;
+        const m = battleMarkerEls.get(entity.id);
+        if (m) m.poisonDot.setAttribute("visibility", "visible");
+        spawnSkillLabel(entity.col, entity.row, "毒");
+        break;
+      }
+      case "musouRecover": {
+        spawnFloatingNumber(findDisplayEntity(ev.unitId), "無双!", "#facc15");
+        break;
+      }
+      case "hpToAp": { // [P7] R4のHP→行動力変換
+        const entity = findDisplayEntity(ev.unitId);
+        entity.hp = ev.hpAfter;
+        updateMarkerHpBar(entity);
+        spawnFloatingNumber(entity, `-${ev.hpSpent}(→行動力+1)`, "#a78bfa");
+        break;
+      }
+      case "trapSet": { // [UI 2026-09-05] 罠マークを盤面に表示
+        addTrapMarker(ev.col, ev.row, ev.owner);
+        spawnSkillLabel(ev.col, ev.row, "罠設置");
+        break;
+      }
+      default: break; // stay/purposeChange は状態変化なし（ログのみ）
+    }
+    appendLogLine(ev);
+  }
+}
+
+function updateTickLabel() {
+  document.getElementById("tickLabel").textContent =
+    `tick ${playbackTick} / ${battleResult.tickCount}（終了理由: 行動力枯渇/停止）`;
+}
+
+function showBattleResult() {
+  const totalHp = owner => displayState.bases.filter(b => b.owner === owner).reduce((s, b) => s + b.hp, 0);
+  const aliveCount = owner => displayState.units.filter(u => u.owner === owner && u.alive).length;
+  const reasonLabel = { annihilation: "全滅", baseFall: "拠点陥落", roundEnd: "行動力切れ（拠点HP/与ダメージ/キャラ数で判定）" }[roundOutcome.endReason];
+  const winnerLabel = roundOutcome.winner === "draw" ? "引き分け" : (roundOutcome.winner === "player1" ? "プレイヤー1" : "プレイヤー2");
+  const cutoffNote = roundOutcome.endedAtTick < battleResult.tickCount
+    ? `　※実際の決着はtick${roundOutcome.endedAtTick}時点（即時終了条件）。それ以降の再生はご参考です。`
+    : "";
+  // [バグ修正 2026-09-05] 設計書§6-1: 全滅・拠点陥落はそのラウンドの勝敗ではなく試合そのものの
+  // 即時終了条件。UC報告「拠点を落とされているのに次のラウンドに行けてしまう」に対応し、
+  // この場合は「次のラウンドへ」を出さず試合終了として扱う（§6-3により4Rも必ずこちらに該当する）
+  const isMatchOver = roundOutcome.endReason !== "roundEnd" || currentRound >= 4;
+  document.getElementById("battleResultLabel").textContent =
+    `再生終了。拠点HP合計: P1=${totalHp("player1")} / P2=${totalHp("player2")}　生存キャラ数: P1=${aliveCount("player1")} / P2=${aliveCount("player2")}` +
+    `　→ ${isMatchOver ? "試合結果" : "ラウンド結果"}: ${winnerLabel}（${reasonLabel}）${cutoffNote}`;
+  document.getElementById("roundAdvancePanel").style.display = isMatchOver ? "none" : "block";
+  if (isMatchOver) {
+    showStatus(`試合終了。最終結果: ${winnerLabel}`);
+    showMatchResultPopup(roundOutcome.winner, reasonLabel);
+  }
+}
+
+// [UI 2026-09-05] UC要望「ゲーム勝利したら、勝利者には勝利のポップアップ、敗北者には敗北のポップアップを
+// 再生終了後に流す。その画面にも再戦か、ホームに戻るボタンを作る」への対応。オンライン対戦中はmyRole、
+// オフライン単体テスト中はcurrentPlayer（デバッグ用の操作プレイヤー切替）を「自分」の視点とみなす
+function showMatchResultPopup(winner, reasonLabel) {
+  const myPerspective = (roomCode && myRole) ? myRole : currentPlayer;
+  const modal = document.getElementById("matchResultModal");
+  const title = document.getElementById("matchResultTitle");
+  let resultKind;
+  if (winner === "draw") { resultKind = "draw"; title.textContent = "引き分け"; }
+  else if (winner === myPerspective) { resultKind = "win"; title.textContent = "勝利"; }
+  else { resultKind = "lose"; title.textContent = "敗北"; }
+  modal.className = `match-result-modal ${resultKind}`;
+  document.getElementById("matchResultSub").textContent = `${reasonLabel}による決着`;
+  document.getElementById("matchResultScrim").classList.add("open");
+}
+
+// [UI 2026-09-05] resetBtn（開発用「全てリセット」）と再戦ボタンで共用するゲーム状態の初期化
+function resetGameState() {
+  resetBasesToFixedPositions();
+  units.length = 0;
+  queue.player1 = [];
+  queue.player2 = [];
+  credits.player1 = ROUND1_CREDITS;
+  credits.player2 = ROUND1_CREDITS;
+  currentRound = 1;
+  regenerateRound1Pool(Date.now());
+  roundStartUnitIds = new Set();
+  persistentTraps = {};
+  mode = "idle";
+  selectedQueueEntry = null;
+  selectedUnitId = null;
+  exitBattleMode();
+}
+
+function pausePlayback() {
+  if (playbackTimer) { clearInterval(playbackTimer); playbackTimer = null; }
+  document.getElementById("playPauseBtn").textContent = "▶ 再生";
+}
+
+function stepForward() {
+  if (playbackTick >= battleResult.tickCount) { pausePlayback(); showBattleResult(); return; }
+  playbackTick++;
+  applyEventsForTick(eventsByTick[playbackTick] || []);
+  renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24] 移動に追従して攻撃範囲を更新
+  updateTickLabel();
+  if (playbackTick >= battleResult.tickCount) { pausePlayback(); showBattleResult(); }
+}
+
+function startPlayback() {
+  if (playbackTimer || playbackTick >= battleResult.tickCount) return;
+  playbackTimer = setInterval(stepForward, 700 / playbackSpeed);
+  document.getElementById("playPauseBtn").textContent = "⏸ 一時停止";
+}
+
+function skipToEnd() {
+  pausePlayback();
+  playbackTick = battleResult.tickCount;
+  displayState.units = battleResult.units.map(u => ({ ...u }));
+  displayState.bases = battleResult.bases.map(b => ({ ...b }));
+  document.getElementById("battleLogFeed").innerHTML = "";
+  for (const entity of [...displayState.bases, ...displayState.units]) {
+    const m = battleMarkerEls.get(entity.id);
+    if (!m) continue;
+    const p = hexCenter(entity.col, entity.row);
+    m.circle.setAttribute("cx", p.x); m.circle.setAttribute("cy", p.y);
+    m.label.setAttribute("x", p.x); m.label.setAttribute("y", p.y + 3);
+    m.hpFill.setAttribute("x", p.x - 14); m.hpFill.setAttribute("y", p.y - m.r - 8);
+    m.poisonDot.setAttribute("cx", p.x + m.r * 0.6); m.poisonDot.setAttribute("cy", p.y - m.r * 0.6);
+    m.poisonDot.setAttribute("visibility", entity.poisoned ? "visible" : "hidden");
+    if (m.charImg) { // [UI 2026-08-25]
+      m.charImg.clipCircle.setAttribute("cx", p.x); m.charImg.clipCircle.setAttribute("cy", p.y);
+      m.charImg.img.setAttribute("x", p.x - m.r); m.charImg.img.setAttribute("y", p.y - m.r);
+    }
+    updateMarkerHpBar(entity);
+    if (!entity.alive) m.g.classList.add("death-fade");
+    else updateMarkerActivity(entity); // [UI 2026-09-05] 行動力切れユニットの減光
+  }
+  for (const ev of battleResult.log) appendLogLine(ev);
+  renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24]
+  for (const [k, owner] of Object.entries(battleResult.traps)) { // [UI 2026-09-05] 最後まで飛ばした場合も罠を表示
+    const [col, row] = k.split(",").map(Number);
+    addTrapMarker(col, row, owner);
+  }
+  updateTickLabel();
+  showBattleResult();
+}
+
+function restartPlayback() {
+  pausePlayback();
+  playbackTick = 0;
+  displayState = initBattleState(units, bases, {});
+  gBattleUnits.innerHTML = "";
+  battleMarkerEls.clear();
+  for (const b of displayState.bases) createBattleMarker(b, true);
+  for (const u of displayState.units) { createBattleMarker(u, false); updateMarkerActivity(u); } // [UI 2026-09-05]
+  renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24] tick0時点の攻撃範囲を表示
+  seedTrapMarkersFromPersistent(); // [UI 2026-09-05] tick0時点＝前ラウンドから引き継いだ罠のみ表示（巻き戻しにも対応）
+  document.getElementById("battleLogFeed").innerHTML = "";
+  document.getElementById("battleResultLabel").textContent =
+    battleResult.tickCount === 0
+      ? "戦闘イベントが0件でした。配置したキャラの指示が全員「この場を守る」（配置直後のデフォルト）のままだと、誰も自分から動かず0tickで終わります。盤面でキャラを選択し、指示を「敵拠点へ最短」や「敵キャラを追う」に変更してから再度お試しください。"
+      : "";
+  document.getElementById("roundAdvancePanel").style.display = "none";
+  updateTickLabel();
+}
+
+function enterBattleMode() {
+  const seedField = document.getElementById("seedInput");
+  const seed = parseInt(seedField.value, 10) || Date.now();
+  seedField.value = seed;
+
+  battleResult = simulateBattle(units, bases, seed, { traps: persistentTraps, round4: currentRound === 4 }); // [P7] §6-3
+  roundOutcome = interpretRoundOutcome(battleResult, units, bases, currentRound === 4); // [P6][P7]
+  eventsByTick = [];
+  for (const ev of battleResult.log) {
+    if (!eventsByTick[ev.tick]) eventsByTick[ev.tick] = [];
+    eventsByTick[ev.tick].push(ev);
+  }
+
+  battleMode = true;
+  gMarkers.setAttribute("visibility", "hidden");
+  gBattleUnits.setAttribute("visibility", "visible");
+  document.getElementById("playbackControls").style.display = "block";
+  document.getElementById("boardSlotBattle").appendChild(svg); // [UI] 盤面svgを戦闘画面側のスロットへ移動
+  showBattleScreen();
+  restartPlayback();
+}
+
+function exitBattleMode() {
+  pausePlayback();
+  battleMode = false;
+  battleResult = null;
+  gBattleUnits.setAttribute("visibility", "hidden");
+  gBattleFx.innerHTML = "";
+  gMarkers.setAttribute("visibility", "visible");
+  document.getElementById("playbackControls").style.display = "none";
+  document.getElementById("boardSlotPlacement").appendChild(svg); // [UI] 盤面svgを配置画面側のスロットへ戻す
+  showPlacementScreen();
+}
+
+// [UI] 配置フェイズ画面／戦闘画面の排他表示（2026-08-22: 画面分割）
+function showPlacementScreen() {
+  document.getElementById("placementScreen").style.display = "block";
+  document.getElementById("battleScreen").style.display = "none";
+}
+function showBattleScreen() {
+  document.getElementById("placementScreen").style.display = "none";
+  document.getElementById("battleScreen").style.display = "block";
+}
+
+document.getElementById("devToolsToggleBtn").addEventListener("click", () => {
+  const el = document.getElementById("devToolsCollapse");
+  el.style.display = el.style.display === "none" ? "block" : "none";
+});
+
+document.getElementById("seedInput").value = Date.now();
+document.getElementById("rerollSeedBtn").addEventListener("click", () => {
+  document.getElementById("seedInput").value = Date.now();
+});
+document.getElementById("startBattleBtn").addEventListener("click", () => {
+  mode = "idle"; selectedQueueEntry = null; selectedUnitId = null;
+  enterBattleMode();
+});
+document.getElementById("playPauseBtn").addEventListener("click", () => {
+  if (playbackTimer) pausePlayback(); else startPlayback();
+});
+document.getElementById("restartBtn").addEventListener("click", restartPlayback);
+document.getElementById("skipBtn").addEventListener("click", skipToEnd);
+document.querySelectorAll(".speed-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    playbackSpeed = parseInt(btn.dataset.speed, 10);
+    document.querySelectorAll(".speed-btn").forEach(b => b.classList.toggle("active", b === btn));
+    if (playbackTimer) { pausePlayback(); startPlayback(); }
+  });
+});
+document.querySelector('.speed-btn[data-speed="1"]').classList.add("active");
+
+/* ==================== P6: ラウンド進行（設計書§6・§7、DOM非依存の純粋関数＋進行UI） ====================
+ * simulateBattle()（P3）は§6-1の即時終了判定を行わずtickループを機械的に最後まで回す設計のため、
+ * ここでログを先頭tickから解釈し直し、即時終了条件（全滅／拠点陥落。同時陥落は「2個陥落」に
+ * 変更されて続行）が最初に成立したtickをもって「本当の決着」とみなす。即時終了しなければ
+ * §6-2の4段階タイブレーク（拠点総HP→そのRの与ダメージ→キャラ総数→引き分け）で判定する。
+ * P4のapplyEventsForTick（DOM版）と対になる、盤面状態だけを更新するheadless版がapplyEventHeadless。
+ * ==================================================================== */
+
+function applyEventHeadless(entityById, ev) {
+  switch (ev.type) {
+    case "move": {
+      const entity = entityById.get(ev.unitId);
+      if (entity) { entity.col = ev.to.col; entity.row = ev.to.row; if (ev.apCost) entity.ap -= ev.apCost; }
+      break;
+    }
+    case "push": case "pull": {
+      const entity = entityById.get(ev.targetId);
+      if (entity) { entity.col = ev.to.col; entity.row = ev.to.row; }
+      break;
+    }
+    case "followMove": {
+      const entity = entityById.get(ev.unitId);
+      if (entity) { entity.col = ev.to.col; entity.row = ev.to.row; }
+      break;
+    }
+    case "attack": {
+      const entity = entityById.get(ev.unitId);
+      if (entity && ev.apCost) entity.ap -= ev.apCost;
+      break;
+    }
+    case "damage": {
+      const target = entityById.get(ev.targetId);
+      if (target) target.hp = ev.targetHpAfter;
+      break;
+    }
+    case "heal": {
+      const target = entityById.get(ev.targetId);
+      if (target) target.hp = Math.min(target.maxHp, target.hp + ev.amount);
+      break;
+    }
+    case "death": case "baseDestroyed": {
+      const entity = entityById.get(ev.unitId);
+      if (entity) entity.alive = false;
+      break;
+    }
+    case "poison": {
+      const target = entityById.get(ev.targetId);
+      if (target) target.poisoned = true;
+      break;
+    }
+    case "musouRecover": {
+      const entity = entityById.get(ev.unitId);
+      if (entity) entity.ap += ev.amount;
+      break;
+    }
+    case "hpToAp": { // [P7] R4のHP→行動力変換
+      const entity = entityById.get(ev.unitId);
+      if (entity) { entity.hp = ev.hpAfter; entity.ap = ev.apAfter; }
+      break;
+    }
+    default: break; // linkedAttack/stay/purposeChangeは盤面状態を変えない（P4のapplyEventsForTickと同じ扱い）
+  }
+}
+
+function interpretRoundOutcome(battleResultInput, unitsInput, basesInput, isRound4) {
+  const state = initBattleState(unitsInput, basesInput, { round4: !!isRound4 });
+  const entityById = new Map();
+  for (const u of state.units) entityById.set(u.id, u);
+  for (const b of state.bases) entityById.set(b.id, b);
+
+  const eventsByTickLocal = [];
+  for (const ev of battleResultInput.log) {
+    (eventsByTickLocal[ev.tick] || (eventsByTickLocal[ev.tick] = [])).push(ev);
+  }
+
+  const damageDealt = { player1: 0, player2: 0 };
+  const initialBaseCount = {
+    player1: state.bases.filter(b => b.owner === "player1").length,
+    player2: state.bases.filter(b => b.owner === "player2").length,
+  };
+  let escalated = false; // 同時陥落による「勝利条件=全陥落」への切り替え済みフラグ（§6-1）
+
+  const aliveUnitCount = owner => state.units.filter(u => u.owner === owner && u.alive).length;
+  const aliveBaseCount = owner => state.bases.filter(b => b.owner === owner && b.alive).length;
+
+  const finish = (tick, reason, winner) => {
+    computeCarryover(state); // §5-4の行動力繰越をこの時点の状態に対して計算する
+    return {
+      endedAtTick: tick, endReason: reason, winner, damageDealt,
+      units: state.units.map(u => ({ ...u })),
+      bases: state.bases.map(b => ({ ...b })),
+    };
+  };
+
+  for (let tick = 1; tick <= battleResultInput.tickCount; tick++) {
+    for (const ev of (eventsByTickLocal[tick] || [])) {
+      if (ev.type === "damage") {
+        const attacker = entityById.get(ev.attackerId);
+        if (attacker) damageDealt[attacker.owner] += ev.amount;
+      }
+      applyEventHeadless(entityById, ev);
+    }
+
+    const p1Units = aliveUnitCount("player1"), p2Units = aliveUnitCount("player2");
+    if (p1Units === 0 || p2Units === 0) {
+      return finish(tick, "annihilation", p1Units === 0 && p2Units === 0 ? "draw" : (p1Units === 0 ? "player2" : "player1"));
+    }
+
+    const p1BasesLeft = aliveBaseCount("player1"), p2BasesLeft = aliveBaseCount("player2");
+    const p1Fell = p1BasesLeft <= (escalated ? 0 : initialBaseCount.player1 - 1);
+    const p2Fell = p2BasesLeft <= (escalated ? 0 : initialBaseCount.player2 - 1);
+    if (p1Fell && p2Fell) {
+      if (!escalated) { escalated = true; continue; } // 同時陥落 → 勝利条件を「全陥落」に変更して続行
+      return finish(tick, "baseFall", p1BasesLeft === 0 && p2BasesLeft === 0 ? "draw" : (p1BasesLeft === 0 ? "player2" : "player1"));
+    }
+    if (p1Fell) return finish(tick, "baseFall", "player2");
+    if (p2Fell) return finish(tick, "baseFall", "player1");
+  }
+
+  // 即時終了せずtickループが終端まで到達 → §6-2の4段階タイブレークで判定
+  // （このケースはsimulateBattle()自体の最終状態＝battleResultInput.units/basesがそのまま正しい）
+  const totalHp = owner => battleResultInput.bases.filter(b => b.owner === owner).reduce((s, b) => s + b.hp, 0);
+  const hp1 = totalHp("player1"), hp2 = totalHp("player2");
+  let winner;
+  if (hp1 !== hp2) winner = hp1 > hp2 ? "player1" : "player2";
+  else if (damageDealt.player1 !== damageDealt.player2) winner = damageDealt.player1 > damageDealt.player2 ? "player1" : "player2";
+  else {
+    const c1 = aliveUnitCount("player1"), c2 = aliveUnitCount("player2");
+    winner = c1 !== c2 ? (c1 > c2 ? "player1" : "player2") : "draw";
+  }
+  return {
+    endedAtTick: battleResultInput.tickCount, endReason: "roundEnd", winner, damageDealt,
+    units: battleResultInput.units.map(u => ({ ...u })),
+    bases: battleResultInput.bases.map(b => ({ ...b })),
+  };
+}
+
+// R2〜R4の基礎クレジット額（設計書§7、2026-08-19確定）。
+// [P7 2026-08-22] §6-3のHP→行動力変換を実装したのでR3→R4のブロックを解除
+const ROUND_BASE_CREDITS = { 2: 500, 3: 400, 4: 600 };
+
+function advanceToNextRound() {
+  const outcome = roundOutcome;
+  // [バグ修正 2026-09-05] 二重クリック等で同じ戦闘結果に対してこの関数が2回走ると、1クライアントだけ
+  // ラウンドが2つ分（クレジットも2ラウンド分）進んでしまい、もう片方のクライアントと状態がズレる事故が
+  // 起きていた（UC実機報告: 2タブで見比べるとラウンド・残クレジットが食い違っていた）。同じroundOutcome
+  // オブジェクトに対しては1回しか実行しないようにする（新しい戦闘が終わるとroundOutcome自体が
+  // 新しいオブジェクトに差し替わるので、次のラウンドでは正常に動作する）
+  if (!outcome || outcome._advanced) return;
+  outcome._advanced = true;
+  const nextRound = currentRound + 1;
+
+  // [バグ修正 2026-09-05] 設計書§6-1: 全滅・拠点陥落は「そのラウンドの勝敗」ではなく試合そのものの
+  // 即時終了条件（残り行動力・残りラウンドは処理しない）。1〜3Rでも次のラウンドには進めない。
+  // （§6-3により4Rは必ずこの条件で決着するので、currentRound>=4のケースも自動的に含まれる）
+  if (outcome.endReason !== "roundEnd" || currentRound >= 4) {
+    const winnerLabel = outcome.winner === "draw" ? "引き分け" : (outcome.winner === "player1" ? "プレイヤー1" : "プレイヤー2");
+    showStatus(`試合終了。最終結果: ${winnerLabel}`);
+    return;
+  }
+
+  const roundBaseCredits = ROUND_BASE_CREDITS[nextRound];
+  if (roundBaseCredits == null) {
+    showStatus(`R${nextRound}のクレジット額がまだ未確定です。`);
+    return;
+  }
+
+  for (const p of ["player1", "player2"]) {
+    credits[p] += roundBaseCredits + (outcome.winner === p ? 200 : 0); // §7・§6-2: 繰越(既存値)+基礎額+勝者200
+  }
+  // [P6] R2以降のプール構成（設計書§10未確定#2）はまだキャラ内容が決まっていないため、
+  // 差し当たり全8体を見せる（R1のランダム6体制限はR1限定）
+  if (nextRound >= 2) currentPool = CHARACTERS.map(c => c.id);
+
+  bases.player1 = outcome.bases.filter(b => b.owner === "player1" && b.alive).map(b => ({ col: b.col, row: b.row, hp: b.hp }));
+  bases.player2 = outcome.bases.filter(b => b.owner === "player2" && b.alive).map(b => ({ col: b.col, row: b.row, hp: b.hp }));
+
+  units.length = 0;
+  for (const u of outcome.units) {
+    if (!u.alive) continue;
+    units.push({
+      id: u.id, owner: u.owner, charId: u.charId, col: u.col, row: u.row,
+      purpose: u.purpose, targetHex: u.targetHex ? { ...u.targetHex } : null, facing: u.facing,
+      hp: u.hp, poisoned: !!u.poisoned, apCarry: u.carryoverAp || 0,
+    });
+  }
+  unitSeq = Math.max(unitSeq, 0, ...units.map(u => seqPartOfUnitId(u.id)));
+
+  // [P6簡略化] 罠はイベントログに設置イベントが無く即時終了tick時点での正確な再構築ができないため、
+  // 常にsimulateBattle()のフル実行結果(battleResult.traps)を引き継ぐ。早期打ち切りの場合、
+  // 「打ち切り後」に仮に設置された罠も含まれ得るが、罠は消えない仕様なので実際より罠が多く
+  // 見える程度の誤差に留まる（将来の見直し候補。P3冒頭の暫定解釈リストに準ずる方針）
+  persistentTraps = { ...battleResult.traps };
+
+  queue.player1 = []; queue.player2 = [];
+  currentRound = nextRound;
+  roundStartUnitIds = new Set(units.map(u => u.id));
+  mode = "idle"; selectedQueueEntry = null; selectedUnitId = null;
+
+  exitBattleMode();
+  document.getElementById("roundAdvancePanel").style.display = "none";
+  showStatus(`R${currentRound}開始。配置フェイズです。`);
+
+  // [P5] オンライン中は両者readyフラグをリセットし、次ラウンドの配置待ちに戻す
+  // （自分の分だけ書き込む＝両クライアントがそれぞれ実行することで両方リセットされる設計）
+  // [バグ修正 2026-09-05] status:"placing"とready:falseを別々のupdate()にしていたため、相手クライアントが
+  // 「statusは既にplacingに変わったが、自分のreadyはまだ古いtrueのまま」という一瞬だけ矛盾した状態を
+  // 観測できてしまい、ホスト側の「両者ready検出→開戦」処理が誤発火して戦闘が勝手に再スタートする事故が
+  // 起きていた（UC報告: 次のラウンドに行こうとすると戦闘画面の最初に戻される・ラウンドがズレる）。
+  // 1回のupdate()にまとめてFirebase側で1トランザクションとして反映させ、中間状態が観測されないようにする
+  if (roomCode && myRole) {
+    update(ref(db, `rooms/${roomCode}`), {
+      status: "placing",
+      [`placements/${myRole}/ready`]: false,
+    }).catch(() => {});
+  }
+
+  render();
+}
+
+document.getElementById("nextRoundBtn").addEventListener("click", advanceToNextRound);
+
+/* ==================== P5: ロビー・ルーム同期（実装本体） ====================
+ * データ構造・秘匿方針はファイル先頭のFirebase初期化ブロックのコメントを参照。
+ * ==================================================================== */
+
+// [2026-08-22修正] localStorageは同一オリジンの全タブで共有されるため、1人が2タブで両陣営をテストすると
+// 後から開いたタブが先のタブと同じ役割に自動復帰してしまうバグがあった。sessionStorageはタブ単位で
+// 独立している（同じタブ内でのリロードには追従するが、他タブとは共有されない）ため、こちらに切り替える。
+const LS_ROOM_KEY = "afbe_room_v1";
+function saveRoomToLocalStorage(code, role) { sessionStorage.setItem(LS_ROOM_KEY, JSON.stringify({ code, role })); }
+function loadSavedRoom() { try { return JSON.parse(sessionStorage.getItem(LS_ROOM_KEY)); } catch { return null; } }
+function clearSavedRoom() { sessionStorage.removeItem(LS_ROOM_KEY); }
+
+let roomCode = null;
+let myRole = null; // "player1" | "player2"（ルーム未参加時はnull）
+let roomRef = null;
+let unsubscribeRoom = null;
+let suppressPush = false; // リロード復帰時の自己書き込みループ防止
+let placementPushTimer = null;
+let myReady = false;
+let opponentReady = false;
+let opponentOnline = false;
+let lobbyPhase = "entry"; // "entry"（未参加） | "inRoom"（自分だけ参加） | "matched"（両者揃った演出中） | "hidden"（本編表示中）
+
+function lobbyMsg(text) { document.getElementById("lobbyMsg").textContent = text; }
+
+function randomRoomCode() { return String(Math.floor(Math.random() * 10000)).padStart(4, "0"); }
+
+function myPlacementSnapshot() {
+  return {
+    bases: bases[myRole],
+    units: units.filter(u => u.owner === myRole),
+    queue: queue[myRole],
+    credits: credits[myRole],
+  };
+}
+
+function pushMyPlacement() {
+  if (!roomCode || !myRole || suppressPush || battleMode) return;
+  clearTimeout(placementPushTimer);
+  placementPushTimer = setTimeout(() => {
+    update(ref(db, `rooms/${roomCode}/placements/${myRole}`), myPlacementSnapshot())
+      .catch(err => lobbyMsg(`同期に失敗しました: ${err.message}`));
+  }, 400);
+}
+
+function restoreMyPlacement(d) {
+  suppressPush = true;
+  bases[myRole] = d.bases || [];
+  for (const u of (d.units || [])) units.push(u);
+  queue[myRole] = d.queue || [];
+  if (typeof d.credits === "number") credits[myRole] = d.credits;
+  unitSeq = Math.max(unitSeq, 0, ...(d.units || []).map(u => seqPartOfUnitId(u.id)));
+  queueSeq = Math.max(queueSeq, 0, ...(d.queue || []).map(q => q.qid));
+  suppressPush = false;
+  render();
+}
+
+function updateLobbyStatusUI() {
+  const oppRow = document.getElementById("opponentStatusRow");
+  document.getElementById("opponentStatusLabel").textContent = opponentOnline ? "接続済み" : "待機中…";
+  oppRow.classList.toggle("online", opponentOnline);
+  oppRow.classList.toggle("waiting", !opponentOnline);
+  document.getElementById("readyStatusLabel").textContent =
+    myReady && opponentReady ? "両者準備完了。開戦します…" :
+    myReady ? "配置完了。相手の準備を待っています…" :
+    opponentReady ? "相手は配置完了。あなたの配置をどうぞ。" : "";
+  document.getElementById("readyBtn").disabled = myReady;
+}
+
+// [UI] ロビー画面（入口）の状態切り替え。state: "A"未参加 / "B"自分だけ参加 / "C"マッチ成立演出
+function showLobbyScreen(state) {
+  document.getElementById("lobbyScreen").style.display = "flex";
+  document.getElementById("layoutRoot").style.display = "none";
+  document.getElementById("pageHeader").style.display = "none";
+  document.getElementById("lobbyStateA").style.display = state === "A" ? "flex" : "none";
+  document.getElementById("lobbyStateB").style.display = state === "B" ? "flex" : "none";
+  document.getElementById("lobbyStateC").style.display = state === "C" ? "flex" : "none";
+}
+function hideLobbyScreen() {
+  document.getElementById("lobbyScreen").style.display = "none";
+  document.getElementById("layoutRoot").style.display = "flex";
+  document.getElementById("pageHeader").style.display = "block";
+}
+
+// ルーム内の「あなた」「相手」カードの色・アイコンをmyRoleに応じて振り分ける
+function updateLobbySideRoles() {
+  const oppRole = myRole === "player1" ? "player2" : "player1";
+  const meEl = document.getElementById("lobbySideMe");
+  const oppEl = document.getElementById("lobbySideOpp");
+  meEl.classList.remove("p1", "p2"); meEl.classList.add(myRole === "player1" ? "p1" : "p2");
+  oppEl.classList.remove("p1", "p2"); oppEl.classList.add(oppRole === "player1" ? "p1" : "p2");
+  document.getElementById("lobbySideMeAvatar").textContent = myRole === "player1" ? "P1" : "P2";
+  document.getElementById("lobbySideOppAvatar").textContent = oppRole === "player1" ? "P1" : "P2";
+}
+
+function setOnlineModeUI(active) {
+  document.querySelectorAll('#playerSelect input').forEach(r => { r.disabled = active; });
+  document.getElementById("playerSelectPanel").style.display = active ? "none" : "block"; // ルーム参加中はパネルごと隠す（本番同等のUIを見せるため）
+  document.getElementById("devToolsPanel").style.display = active ? "none" : "block"; // 全リセット・座標表示も同様に隠す
+  document.getElementById("pageSubtitle").textContent = active
+    ? "2人対戦オンライン・オートバトラー"
+    : "盤面基盤（拠点は固定位置） + 配置フェイズ — キャラ購入・配置 / 指示・向き設定（開発テスト用）";
+  document.getElementById("battlePanelTitle").textContent = active ? "戦闘" : "戦闘（P3+P4テスト）";
+  document.getElementById("manualBattleControls").style.display = active ? "none" : "block";
+  document.getElementById("onlineBattleNote").style.display = active ? "block" : "none";
+  document.getElementById("readyRow").style.display = active ? "inline-flex" : "none"; // [UI 2026-09-05] 配置完了ボタンを上部バー右端に移動
+}
+
+function handleRoomUpdate(snap) {
+  const data = snap.val();
+  if (!data) { lobbyMsg("ルームが削除されました。"); leaveRoomLocal(); return; }
+
+  const oppOnlineField = myRole === "player1" ? "guestOnline" : "hostOnline";
+  opponentOnline = !!data[oppOnlineField];
+  if (data.pool && currentRound === 1) { currentPool = data.pool; render(); } // [P6] R1の共有プールをホスト/ゲスト双方に反映
+  const placements = data.placements || {};
+  const oppRole = myRole === "player1" ? "player2" : "player1";
+  myReady = !!(placements[myRole] && placements[myRole].ready);
+  opponentReady = !!(placements[oppRole] && placements[oppRole].ready);
+  updateLobbyStatusUI();
+
+  // [UI] 自分だけ参加中に相手が揃ったら「マッチ成立」を一瞬見せてから本編（配置フェイズ）へ
+  if (lobbyPhase === "inRoom" && opponentOnline) {
+    lobbyPhase = "matched";
+    showLobbyScreen("C");
+    setTimeout(() => { if (lobbyPhase === "matched") { lobbyPhase = "hidden"; hideLobbyScreen(); } }, 1100);
+  }
+
+  // ホスト側だけが両者ready検出時にseedを発行し開戦させる（書き込み競合を避けるための単独責任）
+  if (myRole === "player1" && myReady && opponentReady && data.status !== "battle") {
+    update(roomRef, { status: "battle", seed: Date.now() % 2147483647 });
+  }
+
+  if (data.status === "battle" && data.seed != null && !battleMode) {
+    startBattleFromRoom(placements, data.seed);
+  }
+}
+
+function startBattleFromRoom(placements, seed) {
+  const p1 = placements.player1 || {};
+  const p2 = placements.player2 || {};
+  bases.player1 = p1.bases || [];
+  bases.player2 = p2.bases || [];
+  units.length = 0;
+  for (const u of (p1.units || [])) units.push(u);
+  for (const u of (p2.units || [])) units.push(u);
+  document.getElementById("seedInput").value = seed;
+  mode = "idle"; selectedQueueEntry = null; selectedUnitId = null;
+  render();
+  enterBattleMode();
+}
+
+function enterRoom(code, role) {
+  // [バグ修正 2026-08-23] リロード時の自動復帰(tryAutoRejoin)と手動での「参加する」がタイミング次第で
+  // 競合すると、enterRoom()が2回呼ばれ、古い（別の）ルームへの購読が解除されないまま新しい購読が
+  // 増えることがあった。両方のonValueがhandleRoomUpdate()で同じグローバル状態(opponentOnline等)を
+  // 更新するため、古いルーム（相手はとっくに切断済み）のスナップショットが後から届いて正しい状態を
+  // 上書きしてしまい、「相手待ち」のまま止まって見える不具合の原因だった。新規購読の前に必ず解除する。
+  if (unsubscribeRoom) { unsubscribeRoom(); unsubscribeRoom = null; }
+
+  roomCode = code;
+  myRole = role;
+  currentPlayer = role;
+  saveRoomToLocalStorage(code, role);
+  roomRef = ref(db, `rooms/${code}`);
+
+  const onlineField = role === "player1" ? "hostOnline" : "guestOnline";
+  update(roomRef, { [onlineField]: true });
+  onDisconnect(ref(db, `rooms/${code}/${onlineField}`)).set(false);
+
+  setOnlineModeUI(true);
+  document.getElementById("roomCodeLabel").textContent = code;
+  updateLobbySideRoles();
+  lobbyMsg("");
+  if (lobbyPhase !== "hidden") { lobbyPhase = "inRoom"; showLobbyScreen("B"); }
+
+  unsubscribeRoom = onValue(roomRef, handleRoomUpdate);
+  render();
+}
+
+function leaveRoomLocal() {
+  if (unsubscribeRoom) { unsubscribeRoom(); unsubscribeRoom = null; }
+  roomCode = null; myRole = null; roomRef = null;
+  myReady = false; opponentReady = false; opponentOnline = false;
+  clearSavedRoom();
+  setOnlineModeUI(false);
+  currentPlayer = document.querySelector('#playerSelect input:checked').value;
+  lobbyPhase = "entry";
+  showLobbyScreen("A");
+  render();
+}
+
+async function createRoom() {
+  lobbyMsg("ルームを作成しています…");
+  let code = null;
+  for (let i = 0; i < 20; i++) {
+    const candidate = randomRoomCode();
+    const snap = await get(ref(db, `rooms/${candidate}`));
+    if (!snap.exists()) { code = candidate; break; }
+  }
+  if (!code) { lobbyMsg("ルームコードの発行に失敗しました。もう一度お試しください。"); return; }
+
+  const poolSeed = Date.now();
+  await set(ref(db, `rooms/${code}`), {
+    status: "waiting",
+    createdAt: serverTimestamp(),
+    hostOnline: true,
+    guestOnline: false,
+    poolSeed, // [P6] R1の共有ランダムプールの元になるシード（両者が同じ6体を見るように）
+    pool: pickRandomPool(poolSeed, ROUND_POOL_SIZE[1]),
+  });
+  enterRoom(code, "player1");
+}
+
+async function joinRoom(code) {
+  if (!/^\d{4}$/.test(code)) { lobbyMsg("合言葉は4桁の数字で入力してください。"); return; }
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (!snap.exists()) { lobbyMsg("そのルームコードは見つかりません。"); return; }
+  const data = snap.val();
+  const saved = loadSavedRoom();
+  const isRejoin = saved && saved.code === code && saved.role === "player2";
+  if (data.guestOnline && !isRejoin) { lobbyMsg("このルームはすでに満員です。"); return; }
+
+  await update(ref(db, `rooms/${code}`), {
+    guestOnline: true,
+    status: data.status === "waiting" ? "placing" : data.status,
+  });
+  enterRoom(code, "player2");
+}
+
+document.getElementById("createRoomBtn").addEventListener("click", createRoom);
+document.getElementById("joinRoomBtn").addEventListener("click", () => {
+  joinRoom(document.getElementById("joinCodeInput").value.trim());
+});
+document.getElementById("devSkipLobbyBtn").addEventListener("click", () => {
+  lobbyPhase = "hidden";
+  hideLobbyScreen();
+});
+document.getElementById("readyBtn").addEventListener("click", () => {
+  if (!roomCode) return;
+  clearTimeout(placementPushTimer);
+  update(ref(db, `rooms/${roomCode}/placements/${myRole}`), { ...myPlacementSnapshot(), ready: true })
+    .catch(err => lobbyMsg(`同期に失敗しました: ${err.message}`));
+});
+document.getElementById("leaveRoomBtn").addEventListener("click", () => {
+  if (roomCode && myRole) {
+    const onlineField = myRole === "player1" ? "hostOnline" : "guestOnline";
+    update(ref(db, `rooms/${roomCode}`), { [onlineField]: false }).catch(() => {});
+  }
+  leaveRoomLocal();
+});
+
+// [UI 2026-09-05] 試合終了ポップアップの「再戦する」「ホームに戻る」。オンライン中は両者が同じ操作を
+// 独立に行う設計（既存のラウンド進行と同じ思想）。決定論なので両者が同じ初期状態に収束する
+document.getElementById("rematchBtn").addEventListener("click", () => {
+  document.getElementById("matchResultScrim").classList.remove("open");
+  resetGameState();
+  // [バグ修正 2026-09-05] advanceToNextRound()と同じ理由で、status/readyは1回のupdate()にまとめて
+  // アトミックに反映する（中間状態を観測させない）
+  if (roomCode && myRole) {
+    update(ref(db, `rooms/${roomCode}`), {
+      status: "placing",
+      [`placements/${myRole}/ready`]: false,
+    }).catch(() => {});
+  }
+  showStatus("再戦を開始します。配置フェイズです。");
+  render();
+});
+document.getElementById("goHomeBtn").addEventListener("click", () => {
+  document.getElementById("matchResultScrim").classList.remove("open");
+  if (roomCode && myRole) {
+    const onlineField = myRole === "player1" ? "hostOnline" : "guestOnline";
+    update(ref(db, `rooms/${roomCode}`), { [onlineField]: false }).catch(() => {});
+  }
+  resetGameState();
+  leaveRoomLocal();
+});
+
+showLobbyScreen("A"); // [UI] 初期表示はロビー入口。復帰処理があれば下のtryAutoRejoinが上書きする
+
+// ページ読み込み時、直前に参加していたルームが残っていれば自動復帰する（[P5] 切断・リロード対策）
+(async function tryAutoRejoin() {
+  const saved = loadSavedRoom();
+  if (!saved || !saved.code || !saved.role) return;
+  const snap = await get(ref(db, `rooms/${saved.code}`));
+  // [バグ修正 2026-08-23] この非同期処理の間にユーザーが手動でルーム作成/参加を終えている可能性がある。
+  // その場合は自動復帰で上書きしない（roomCodeが既にセットされていれば手動操作が先に完了した合図）
+  if (roomCode !== null) return;
+  if (!snap.exists()) { clearSavedRoom(); return; }
+  lobbyMsg(`ルーム${saved.code}に復帰しています…`);
+  enterRoom(saved.code, saved.role);
+  const mySnap = await get(ref(db, `rooms/${saved.code}/placements/${saved.role}`));
+  if (mySnap.exists() && roomCode === saved.code) restoreMyPlacement(mySnap.val());
+})();
+
+render();
+</script>
+</body>
+</html>
