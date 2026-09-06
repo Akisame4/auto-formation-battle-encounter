@@ -219,6 +219,11 @@
   }
   .shop-grid .hcard { width: auto; }
 
+  /* [UI 2026-09-06] UC要望「ゲーム終了時に盤面が見られるようにしてほしい」への対応。
+     以前は共通の.scrim（画面全体を暗転+ぼかし）をそのまま使っていたため盤面が見えなくなっていた。
+     試合終了ポップアップだけ背景を暗転させず、右側（ログ側）に寄せて表示することで盤面を隠さないようにする */
+  #matchResultScrim { background: transparent; backdrop-filter: none; justify-content: flex-end; padding-right: 32px; pointer-events: none; }
+  #matchResultScrim .match-result-modal { pointer-events: auto; }
   /* [UI 2026-09-05] 試合終了ポップアップ（勝利/敗北/引き分け）。UC要望により再戦・ホームに戻るを併設 */
   .match-result-modal {
     width: min(360px, 100%); text-align: center; padding: 36px 28px 28px;
@@ -675,6 +680,7 @@
 
       <h3>戦闘フェイズ</h3>
       <p>配置が終わると、両陣営のキャラが指示に従って自動的に行動します（移動・攻撃・スキル発動）。全キャラの行動力が尽きるか、これ以上盤面が動かなくなった時点で戦闘終了です。再生速度の変更・早送り・巻き戻しができます。</p>
+      <p>戦闘終了時に<b>行動力が余っていたキャラ</b>は、その半分（端数切り上げ）が次のラウンドの行動力に上乗せされます（上乗せ込みでも基礎行動力の2倍が上限）。配置画面で指示パネルを開くと「行動20+10」のように上乗せ分が表示されます。</p>
 
       <h3>勝敗</h3>
       <ul>
@@ -2164,6 +2170,10 @@ function renderUnitEditPanel() {
   const char = getCharacter(unit.charId);
   const ownerLabel = unit.owner === "player1" ? "プレイヤー1" : "プレイヤー2";
   const curHp = unit.hp != null ? unit.hp : char.hp;
+  // [UI 2026-09-06] UC要望「行動力の引継ぎ上乗せ」（設計書§5-4: 前ラウンド終了時に残った行動力の半分
+  // を次ラウンドの行動力に上乗せする仕様）が配置画面に一切表示されていなかったので追加。
+  // `apCarry`は`advanceToNextRound()`で前ラウンドの繰越分がセットされる（新規配置ユニットは0/undefined）
+  const apDisplay = unit.apCarry ? `${char.ap}+${unit.apCarry}` : `${char.ap}`;
 
   // [UI 2026-09-06] UC要望「タップすると敵のキャラのステータスや残りHPが分かるようにする」への対応。
   // 相手のキャラは閲覧専用（ステータス・残りHP・スキルは見えるが、指示は秘匿ルールにより非表示）
@@ -2173,7 +2183,7 @@ function renderUnitEditPanel() {
       `<div class="meta"><div class="n">${char.name}</div>` +
       `<div class="p">${ownerLabel}（相手）・col${unit.col},row${unit.row}</div></div>` +
       `</div>`;
-    html += `<div class="hint">残りHP ${curHp}/${char.hp}　攻${char.atk}　行動力${char.ap}</div>`;
+    html += `<div class="hint">残りHP ${curHp}/${char.hp}　攻${char.atk}　行動力${apDisplay}</div>`;
     html += `<div class="skill-pills">${skillPillsHtml(char.skills)}</div>`;
     html += `<div class="hint">相手の指示（目的）は秘匿のため見えません。</div>`;
     html += `<div class="inspector-spacer"></div>`;
@@ -2186,7 +2196,7 @@ function renderUnitEditPanel() {
   let html = `<div class="inspector-who">` +
     `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
     `<div class="meta"><div class="n">${char.name}</div>` +
-    `<div class="p">${ownerLabel}・col${unit.col},row${unit.row}・HP${curHp}/${char.hp}・攻${char.atk}・行動${char.ap}</div></div>` +
+    `<div class="p">${ownerLabel}・col${unit.col},row${unit.row}・HP${curHp}/${char.hp}・攻${char.atk}・行動${apDisplay}</div></div>` +
     `</div>`;
   html += `<div class="purpose-row" id="purposeGroup">`;
   for (const p of PURPOSES) {
