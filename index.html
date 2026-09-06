@@ -2807,7 +2807,10 @@ function interpretRoundOutcome(battleResultInput, unitsInput, basesInput, isRoun
 
 // R2〜R4の基礎クレジット額（設計書§7、2026-08-19確定）。
 // [P7 2026-08-22] §6-3のHP→行動力変換を実装したのでR3→R4のブロックを解除
-const ROUND_BASE_CREDITS = { 2: 500, 3: 400, 4: 600 };
+// [バランス調整 2026-09-06] UC報告「今めっちゃ買えるから少なくしたい」への対応。
+// 旧値(2:500, 3:400, 4:600)だと繰越と合わさりR2時点でほぼ全キャラ購入可能になっていたため、
+// R1の200crと同程度の感覚で毎ラウンド新規2体前後だけ増強できる水準まで引き下げた
+const ROUND_BASE_CREDITS = { 2: 200, 3: 200, 4: 300 };
 
 function advanceToNextRound() {
   const outcome = roundOutcome;

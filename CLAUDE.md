@@ -198,6 +198,19 @@ UCから「見た目も操作性もUIを整えたい、まずロビーから」�
 
 ## 現在の状態
 
+- **[2026-09-06] バランス調整第1弾: R2〜R4の基礎クレジットを引き下げ**。UC報告「少なくしたいんだよね、今めっちゃ買えるから」への対応。旧`ROUND_BASE_CREDITS = { 2: 500, 3: 400, 4: 600 }`は繰越（未使用クレジットが無制限に次ラウンドへ持ち越される）と合わさり、R2時点でほぼ全キャラを購入できてしまっていた。`{ 2: 200, 3: 200, 4: 300 }`に変更（R1の200crと同程度の感覚で、毎ラウンド新規2体前後を増強するペースを狙った値）。勝者ボーナス+200・繰越の仕組み自体は変更なし。設計書§7の表も更新済み
+  - 実機検証済み: R1でソルジャー1体（残150cr）ずつ購入→引き分け決着→R2でクレジットが150+200=350になることを確認。コンソールエラーなし
+  - **バランス調整は継続中のテーマ**。設計書§11「バランス調整メモ」に既知の懸念（クレリックの理論値、勝者ボーナスのスノーボール度合い等）が挙がっているので、今後もUCからの調整依頼が続く見込み
+
+- **[2026-09-06] GitHub Pagesで公開（オンライン化）**。UC要望「OK　これでいったんオンライン化しよう」への対応。従来`index.html`はローカル（`python -m http.server`等）でしか開けず、Firebase Realtime Database自体はクラウド上で稼働していても、ゲーム画面自体を友達に共有する手段が無かった。
+  - GitHub CLI (`gh`) をwinget経由でインストールし、UC本人に`gh auth login`（ブラウザでのデバイスコード認証）を実施してもらった（GitHubアカウント: Akisame4）
+  - リポジトリ: https://github.com/Akisame4/auto-formation-battle-encounter （public。`gh repo create --source=. --push`で作成と同時に初回pushまで実施）
+  - `.gitignore`にExcelのロックファイル（`~$*.xlsx`）を追加してコミット対象から除外
+  - GitHub Pagesを`gh api -X POST repos/.../pages -f "source[branch]=main" -f "source[path]=/"`で有効化（mainブランチのルートを配信）
+  - **公開URL: https://akisame4.github.io/auto-formation-battle-encounter/**（`index.html`が起点。相対パスの`images/chars/...`もそのまま機能する）
+  - 実機検証済み: 公開URLでロビー画面が正しく表示されること、「ルームを作成」でFirebaseに接続し合言葉が発行されること（実際にRealtime Databaseへ書き込みできている）を確認
+  - **今後の更新の反映方法**: `index.html`等を変更したら、このリポジトリで`git add`→`git commit`→`git push`するだけで、GitHub Pagesが自動的に再ビルド・再公開する（数十秒〜1分程度のビルド待ちが発生する場合がある）。gh CLIは`C:\Program Files\GitHub CLI\gh.exe`にインストール済み（セッション再起動後はPATH経由で`gh`とだけ打てば動くはずだが、Git Bash側でPATHが反映されない場合はフルパス指定が必要）
+
 - **[2026-09-06] P2（赤陣営）のキャラカード背景を赤に修正**。UC要望「赤の陣地のプレイヤーの方のキャラの背景は赤にして」への対応。`.h-banner`（購入モーダル・配置待ち/配置済みカード上部の全身画像バナー）と`.h-icon`（指示パネルの小アイコン）が、所有者に関わらず常に`var(--p1)`（青）のグラデーション固定になっていたバグ（見落とし）を修正。
   - `.h-banner.p2, .h-icon.p2 { background: linear-gradient(160deg, var(--p2), var(--p2-dark)); }`をCSSに追加し、JS側の該当4箇所（`renderCharList`＝購入モーダル、`renderQueueList`の配置待ち/配置済みカード、`renderUnitEditPanel`の指示パネルアイコン）でowner（購入モーダル・配置待ちは`currentPlayer`、配置済み・指示パネルは`unit.owner`）が`"player2"`の時だけ`p2`クラスを付与するようにした
   - 盤面上のユニットマーカー（`battleColor()`使用）・拠点HPバー等は元々`owner`で正しく色分けされていたため対象外（今回のバグはカード/アイコンUIのみ）
