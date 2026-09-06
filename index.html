@@ -237,30 +237,40 @@
   .col-board { display: flex; align-items: center; justify-content: center; padding: 16px; overflow: auto;
     background: radial-gradient(ellipse 90% 60% at 50% 4%, rgba(74,144,217,0.05), transparent 55%); }
 
+  /* [UI 2026-09-06] UC要望「指示は盤面の右側のアイドルスペースにボタン置けないかな」への対応。
+     盤面(.col-board)は横幅に余裕があり右側が常に空いていたため、指示パネルをそこへ移した。
+     未選択時は1カラムのまま（盤面が中央に広がる）、選択時だけ右にサイドバーとして現れる */
+  .placement-body { display: grid; grid-template-columns: 1fr; }
+  .placement-body.has-selection { grid-template-columns: 1fr 240px; }
+  @media (max-width: 900px) { .placement-body.has-selection { grid-template-columns: 1fr; } }
+
   .inspector-strip {
-    padding: 10px 16px; border-top: 1px solid var(--panel-border); background: var(--panel);
+    padding: 14px; border-left: 1px solid var(--panel-border); background: var(--panel);
+    max-height: 560px; overflow-y: auto;
   }
-  .inspector-strip #unitEditContent { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  @media (max-width: 900px) { .inspector-strip { border-left: none; border-top: 1px solid var(--panel-border); } }
+  .inspector-strip #unitEditContent { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
   .inspector-who { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .inspector-who .h-icon { width: 52px; height: 52px; border-radius: 10px; font-size: 1.15em; }
   .inspector-who .meta { font-size: 0.76em; }
   .inspector-who .meta .n { font-weight: 700; }
   .inspector-who .meta .p { color: var(--text-faint); }
-  .purpose-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .purpose-row { display: flex; flex-direction: column; gap: 6px; }
   .purpose-chip {
-    display: flex; align-items: center; gap: 5px; padding: 7px 11px; border-radius: 999px; border: 1px solid var(--panel-border);
+    display: flex; align-items: center; gap: 5px; padding: 7px 11px; border-radius: 8px; border: 1px solid var(--panel-border);
     background: var(--bg); font-size: 0.76em; color: var(--text-dim); cursor: pointer; white-space: nowrap; font-family: inherit;
+    justify-content: center;
   }
   .purpose-chip.active { border-color: var(--accent); color: var(--accent); background: rgba(255,212,121,0.08); }
-  .facing-row { display: flex; gap: 4px; }
+  .facing-row { display: flex; gap: 4px; flex-wrap: wrap; }
   .facing-row button {
     width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--panel-border); background: var(--bg);
     color: var(--text-dim); cursor: pointer; font-size: 0.85em; padding: 0;
   }
   .facing-row button.active { border-color: var(--accent); color: var(--accent); }
-  .inspector-spacer { flex: 1; }
+  .inspector-spacer { display: none; }
   .close-btn {
-    background: none; border: 1px solid #555c6d; color: var(--text-dim); border-radius: 6px; padding: 6px 12px;
+    display: block; width: 100%; background: none; border: 1px solid #555c6d; color: var(--text-dim); border-radius: 6px; padding: 7px 12px;
     font-size: 0.78em; cursor: pointer; font-family: inherit; white-space: nowrap;
   }
   .close-btn:hover { color: var(--text); }
@@ -649,17 +659,18 @@
       <button id="openShopBtn" class="shop-cta-topbar">＋ キャラを購入</button>
     </div>
 
-    <div class="inspector-strip" id="unitEditPanel" style="display:none;">
-      <div id="unitEditContent"></div>
-    </div>
-
     <div class="strip top">
       <span class="strip-label">配置待ち</span>
       <div class="strip-track" id="queueList"></div>
     </div>
 
-    <div class="col-board" id="boardSlotPlacement">
-      <svg id="board"></svg>
+    <div class="placement-body" id="placementBody">
+      <div class="col-board" id="boardSlotPlacement">
+        <svg id="board"></svg>
+      </div>
+      <div class="inspector-strip" id="unitEditPanel" style="display:none;">
+        <div id="unitEditContent"></div>
+      </div>
     </div>
 
     <div class="scrim" id="shopScrim">
@@ -1201,7 +1212,7 @@ function initBattleState(unitsInput, basesInput, options) {
       baseSeq++;
       bases.push({
         id: `base${baseSeq}`, owner, col: b.col, row: b.row,
-        hp: b.hp != null ? b.hp : baseHp, maxHp: b.hp != null ? b.hp : baseHp,
+        hp: b.hp != null ? b.hp : baseHp, maxHp: baseHp, // [バグ修正 2026-09-06] maxHpは常に満タン値。以前は繰越HPをmaxHpにも誤って使っていたため、拠点のHPバーが常に満タン表示になっていた
         isBase: true, alive: true,
       });
     }
@@ -1844,8 +1855,9 @@ function render() {
     const color = unit.owner === "player1" ? "var(--p1)" : "var(--p2)";
     const dark = unit.owner === "player1" ? "var(--p1-dark)" : "var(--p2-dark)";
     const isSelected = unit.id === selectedUnitId;
+    const isOwn = unit.owner === currentPlayer; // [バグ修正 2026-09-06] 「相手の指示が見えてしまっている」対応。位置・HP等は仕様通り見せるが、指示（目的地ライン・指示バッジ）は自分のキャラのみ表示する
 
-    if (unit.purpose === "goto" && unit.targetHex) {
+    if (isOwn && unit.purpose === "goto" && unit.targetHex) {
       const t = hexCenter(unit.targetHex.col, unit.targetHex.row);
       const line = el("line", { x1: x, y1: y, x2: t.x, y2: t.y, stroke: color, "stroke-width": "1", "stroke-dasharray": "3,3", opacity: "0.6" });
       const flag = el("text", { x: t.x, y: t.y + 4, "text-anchor": "middle", fill: color, "font-size": "12", "font-weight": "bold", "pointer-events": "none" });
@@ -1860,20 +1872,47 @@ function render() {
     });
     const label = el("text", { x, y: y + 3, "text-anchor": "middle", fill: "#fff", "font-size": "8", "font-weight": "bold", "pointer-events": "none" });
     label.textContent = char.name.slice(0, 2);
-    const purposeMark = { rush: "突", guard: "守", chase: "追", goto: "指" }[unit.purpose];
-    const pText = el("text", { x, y: y - HEX_SIZE * 0.8, "text-anchor": "middle", fill: "#ffd479", "font-size": "8", "pointer-events": "none" });
-    pText.textContent = purposeMark;
+    // [UI 2026-09-06] UC指摘「指示マークがHPバーとかぶって見づらい」への対応。
+    // 元々どちらもマーカー上部に置いていたため衝突していた。下に逃がす案も検討したが、縦に隣接配置
+    // すると今度は下のキャラの顔と衝突するため、マーカー右下の角に小さいバッジとして固定表示する
+    // 方式にした（毒状態アイコン等、他所で使っている「角に小さい印を置く」パターンを踏襲）
     gMarkers.append(circle, label);
     appendCharMarkerImage(gMarkers, unit.charId, x, y, HEX_SIZE * 0.62, `p-${unit.id}`); // [UI 2026-08-25] / [UI 2026-09-02] r拡大
-    gMarkers.append(pText);
+    if (isOwn) {
+      const purposeMark = { rush: "突", guard: "守", chase: "追", goto: "指" }[unit.purpose];
+      const badgeR = HEX_SIZE * 0.62 * 0.42;
+      const badgeX = x + HEX_SIZE * 0.62 * 0.72, badgeY = y + HEX_SIZE * 0.62 * 0.72;
+      const pBadgeBg = el("circle", { cx: badgeX, cy: badgeY, r: badgeR.toFixed(1), fill: "#14161a", stroke: "#ffd479", "stroke-width": "1", "pointer-events": "none" });
+      const pText = el("text", { x: badgeX, y: badgeY + 2.5, "text-anchor": "middle", fill: "#ffd479", "font-size": "6.5", "font-weight": "bold", "pointer-events": "none" });
+      pText.textContent = purposeMark;
+      gMarkers.append(pBadgeBg, pText);
+    }
     appendMarkerHpBar(x, y, unit.hp != null ? unit.hp : char.hp, char.hp); // [UI 2026-09-06] 前ラウンドで削れたHPを配置画面でも見えるように
 
-    if (unit.facing !== null && unit.facing !== undefined) {
-      const dir = HEX_DIRECTIONS[unit.facing];
-      const wx = x + Math.cos(dir.angle * Math.PI / 180) * HEX_SIZE * 0.9;
-      const wy = y + Math.sin(dir.angle * Math.PI / 180) * HEX_SIZE * 0.9;
-      const wedge = el("circle", { cx: wx, cy: wy, r: "2.5", fill: "#ffd479", "pointer-events": "none" });
-      gMarkers.appendChild(wedge);
+    if (isOwn && unit.facing !== null && unit.facing !== undefined) {
+      if (isSelected && needsFacing(char)) {
+        // [UI 2026-09-06] UC要望「向きを変えるキャラを選択したら、向きを決めるサークルがそのキャラの
+        // 周りに出て、それで選択できるように」への対応。6方向すべてをクリック可能な点として周囲に配置し、
+        // 現在の向きだけ大きく塗りつぶして強調する（サイドパネルのボタンは従来通り残し、どちらでも変更可）
+        HEX_DIRECTIONS.forEach((dir, i) => {
+          const wx = x + Math.cos(dir.angle * Math.PI / 180) * HEX_SIZE * 0.98;
+          const wy = y + Math.sin(dir.angle * Math.PI / 180) * HEX_SIZE * 0.98;
+          const active = unit.facing === i;
+          const dot = el("circle", {
+            cx: wx, cy: wy, r: active ? "4.5" : "3.5",
+            fill: active ? "#ffd479" : "#14161a", stroke: "#ffd479", "stroke-width": "1.2",
+            style: "cursor:pointer;",
+          });
+          dot.addEventListener("click", (e) => { e.stopPropagation(); setUnitFacing(unit.id, i); });
+          gMarkers.appendChild(dot);
+        });
+      } else {
+        const dir = HEX_DIRECTIONS[unit.facing];
+        const wx = x + Math.cos(dir.angle * Math.PI / 180) * HEX_SIZE * 0.9;
+        const wy = y + Math.sin(dir.angle * Math.PI / 180) * HEX_SIZE * 0.9;
+        const wedge = el("circle", { cx: wx, cy: wy, r: "2.5", fill: "#ffd479", "pointer-events": "none" });
+        gMarkers.appendChild(wedge);
+      }
     }
   }
 
@@ -1991,9 +2030,14 @@ function renderQueueList() {
 function renderUnitEditPanel() {
   const panel = document.getElementById("unitEditPanel");
   const content = document.getElementById("unitEditContent");
+  const body = document.getElementById("placementBody");
   const unit = units.find(u => u.id === selectedUnitId);
-  if (!unit) { panel.style.display = "none"; return; }
-  panel.style.display = "block"; // [UI] ユニット選択中のみ下段に指示パネルを表示（購入ボタンは常時上部バーに常設）
+  if (!unit) { panel.style.display = "none"; body.classList.remove("has-selection"); return; }
+  // [UI 2026-09-06] UC要望「指示は盤面の右側のアイドルスペースに」への対応。以前は購入待ちキューの上に
+  // 全幅の横帯として表示していたが、盤面の右に空きスペースがあったため、そこにサイドパネルとして
+  // 表示するよう変更（未選択時は`.placement-body`が1カラムに戻り、盤面が中央に広がる）
+  panel.style.display = "block";
+  body.classList.add("has-selection");
   const char = getCharacter(unit.charId);
   const ownerLabel = unit.owner === "player1" ? "プレイヤー1" : "プレイヤー2";
 
@@ -2247,6 +2291,17 @@ function onHexClick(col, row) {
   if (mode === "moveUnit") { handleMoveUnit(col, row); return; }
   const existingUnit = unitAt(col, row);
   if (existingUnit) { selectUnitForEdit(existingUnit.id); return; }
+  // [UI 2026-09-06] UC要望「キャラを選択して、マス目をタップしたら配置変更できるようにしたい」への対応。
+  // 以前は「配置位置を変える」ボタンを押してmoveUnitモードに入る必要があったが、今ラウンド新規配置の
+  // 自分のキャラを選択中に空きマスを直接タップした場合も、そのままそこへ移動できるようにした
+  // （ボタン自体は明示的な操作として引き続き残す。返却不可・引き継ぎユニットの制約はhandleMoveUnit内で担保）
+  if (selectedUnitId) {
+    const unit = units.find(u => u.id === selectedUnitId);
+    if (unit && unit.owner === currentPlayer && !roundStartUnitIds.has(unit.id)) {
+      handleMoveUnit(col, row);
+      return;
+    }
+  }
   // 拠点は固定位置のため、それ以外のクリック（空きマス等）は何もしない
 }
 
@@ -2680,8 +2735,12 @@ function restartPlayback() {
   displayState = initBattleState(units, bases, {});
   gBattleUnits.innerHTML = "";
   battleMarkerEls.clear();
-  for (const b of displayState.bases) createBattleMarker(b, true);
-  for (const u of displayState.units) { createBattleMarker(u, false); updateMarkerActivity(u); } // [UI 2026-09-05]
+  // [バグ修正 2026-09-06] UC報告「戦闘中のHPバーが次のラウンドの戦闘開始時にフルに見えている」。
+  // createBattleMarker()はHPバーを常に満タン幅で生成し、以後はupdateMarkerHpBar()呼び出しで初めて
+  // 実際の割合に更新される。ここで呼び忘れていたため、前ラウンドから引き継いだ削れたHPが「このtickで
+  // 一度もダメージを受けるまで」満タン表示のまま放置されていた（一度も被弾しなければ試合終了まで満タンのまま）
+  for (const b of displayState.bases) { createBattleMarker(b, true); updateMarkerHpBar(b); }
+  for (const u of displayState.units) { createBattleMarker(u, false); updateMarkerHpBar(u); updateMarkerActivity(u); } // [UI 2026-09-05]
   renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24] tick0時点の攻撃範囲を表示
   seedTrapMarkersFromPersistent(); // [UI 2026-09-05] tick0時点＝前ラウンドから引き継いだ罠のみ表示（巻き戻しにも対応）
   document.getElementById("battleLogFeed").innerHTML = "";
@@ -2934,8 +2993,10 @@ function advanceToNextRound() {
     return;
   }
 
+  // [バランス調整 2026-09-06] UC判断「勝利時の傾斜は消そう。クレジットボーナスはなし」により
+  // 勝者+200ボーナスを撤廃。繰越(既存値)+基礎額のみになった（§6-2・§7の記載も合わせて更新）
   for (const p of ["player1", "player2"]) {
-    credits[p] += roundBaseCredits + (outcome.winner === p ? 200 : 0); // §7・§6-2: 繰越(既存値)+基礎額+勝者200
+    credits[p] += roundBaseCredits;
   }
   // [P6] R2以降のプール構成（設計書§10未確定#2）はまだキャラ内容が決まっていないため、
   // 差し当たり全8体を見せる（R1のランダム6体制限はR1限定）
