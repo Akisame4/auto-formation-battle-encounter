@@ -234,8 +234,22 @@
   .match-result-actions .btn-primary-lg { width: 100%; }
   .match-result-actions .close-btn { width: 100%; }
 
-  .col-board { display: flex; align-items: center; justify-content: center; padding: 16px; overflow: auto;
+  .col-board { position: relative; display: flex; align-items: center; justify-content: center; padding: 16px; overflow: auto;
     background: radial-gradient(ellipse 90% 60% at 50% 4%, rgba(74,144,217,0.05), transparent 55%); }
+
+  /* [UI 2026-09-06] UC要望「マップをズームインができるようにしてほしい」への対応。
+     配置画面・戦闘画面どちらの盤面コンテナにも同じコントロールを置く（盤面svgは両画面で使い回すため） */
+  .board-zoom-controls {
+    position: absolute; top: 10px; right: 10px; z-index: 5; display: flex; align-items: center; gap: 4px;
+    background: rgba(20,22,27,0.82); border: 1px solid var(--panel-border); border-radius: 8px; padding: 4px 6px;
+  }
+  .board-zoom-controls button {
+    font-family: inherit; width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--panel-border);
+    background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 0.85em; padding: 0; line-height: 1;
+  }
+  .board-zoom-controls button:hover { color: var(--accent); border-color: var(--accent-dim); }
+  .board-zoom-controls .board-zoom-reset { width: auto; padding: 0 8px; font-size: 0.72em; }
+  .board-zoom-label { font-size: 0.72em; color: var(--text-faint); min-width: 3em; text-align: center; font-variant-numeric: tabular-nums; }
 
   /* [UI 2026-09-06] UC要望「指示は盤面の右側のアイドルスペースにボタン置けないかな」への対応。
      盤面(.col-board)は横幅に余裕があり右側が常に空いていたため、指示パネルをそこへ移した。
@@ -291,7 +305,7 @@
   .battle-topbar h2 { margin: 0; font-size: 1em; color: var(--text); }
   .battle-body { display: grid; grid-template-columns: 1fr 300px; }
   .battle-board-col {
-    display: flex; align-items: center; justify-content: center; padding: 20px; overflow: auto;
+    position: relative; display: flex; align-items: center; justify-content: center; padding: 20px; overflow: auto;
     background: radial-gradient(ellipse 90% 60% at 50% 10%, rgba(74,144,217,0.06), transparent 60%);
   }
   .battle-side { border-left: 1px solid var(--panel-border); border-radius: 0; width: auto; max-height: 680px; overflow: auto; }
@@ -485,6 +499,28 @@
     filter: drop-shadow(0 2px 18px rgba(255,212,121,0.25));
   }
   .lobby-full { margin: 6px 0 0; font-size: 0.78em; letter-spacing: 0.24em; color: var(--text-dim); text-transform: uppercase; }
+  /* [UI 2026-09-06] UC要望「ルール説明ボタンを最初の画面に追加したい」への対応 */
+  .lobby-rules-btn {
+    margin-top: 16px; font-family: inherit; background: var(--panel); border: 1px solid var(--panel-border);
+    color: var(--text-dim); font-size: 0.78em; padding: 7px 16px; border-radius: 999px; cursor: pointer;
+  }
+  .lobby-rules-btn:hover { color: var(--accent); border-color: var(--accent-dim); }
+  .rules-modal { width: min(640px, 100%); }
+  .rules-body { padding: 6px 22px 22px; overflow-y: auto; font-size: 0.86em; line-height: 1.75; color: var(--text-dim); }
+  .rules-body h3 {
+    color: var(--text); font-size: 1em; margin: 22px 0 6px; padding-top: 14px; border-top: 1px solid var(--panel-border);
+  }
+  .rules-body h3:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+  .rules-body p { margin: 4px 0; }
+  .rules-body ul { margin: 4px 0; padding-left: 1.3em; }
+  .rules-body li { margin: 3px 0; }
+  .rules-body b { color: var(--text); }
+  .rules-body .accent { color: var(--accent); font-weight: 700; }
+  .rules-table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 0.95em; }
+  .rules-table th, .rules-table td {
+    border: 1px solid var(--panel-border); padding: 5px 8px; text-align: center; font-variant-numeric: tabular-nums;
+  }
+  .rules-table th { background: var(--bg); color: var(--text-dim); font-weight: 600; }
   .lobby-card, .lobby-room-card {
     width: 100%; max-width: 420px;
     background: var(--panel); border: 1px solid #3d4356; border-radius: 14px;
@@ -543,6 +579,7 @@
       <div class="lobby-brand">
         <p class="lobby-mark">AFBE</p>
         <p class="lobby-full">Formation Battle Encounter</p>
+        <button id="rulesBtn" class="lobby-rules-btn">📖 遊び方・ルール説明</button>
       </div>
       <div class="lobby-card">
         <div class="lobby-path">
@@ -599,6 +636,56 @@
     </div>
 
     <div id="lobbyMsg" class="lobby-msg"></div>
+  </div>
+</div>
+
+<div class="scrim" id="rulesScrim">
+  <div class="shop-modal rules-modal">
+    <div class="shop-modal-head">
+      <h2>遊び方・ルール説明</h2>
+      <button class="shop-modal-close" id="closeRulesBtn">✕</button>
+    </div>
+    <div class="rules-body">
+      <h3>概要</h3>
+      <p>2人対戦のオンライン・オートバトラーです。ヘックス（六角形）の盤面に自分のキャラを配置して指示を出すと、あとは<b>自動で戦闘が進行</b>します。試合中に操作する場面はありません。</p>
+      <p>全<b>4ラウンド</b>制。ラウンドは「配置フェイズ」→「戦闘フェイズ」の繰り返しで進みます。キャラのHP・位置・盤面の罠は次のラウンドに引き継がれますが、行動力（1ラウンドに動ける回数）は毎ラウンド全回復します。</p>
+
+      <h3>配置フェイズ</h3>
+      <ul>
+        <li>クレジットでキャラを購入し、<b>自陣</b>（自分の拠点の周辺3マス）に配置します。体数の上限はありません（クレジットが許す限り）</li>
+        <li>配置したキャラには4種類の<b>指示（目的）</b>のいずれかを設定します（下記）</li>
+        <li>今のラウンドで新しく置いたキャラは、何度でも自由に配置し直せます。前のラウンドから引き継いだキャラは位置を変更できません（指示の変更だけは自由です）</li>
+        <li>相手の新規配置・購入は見えません。ただし前ラウンドから引き継いだ相手キャラは、位置やHP・ステータスは見えます（タップで確認可）。指示の中身だけは常に非公開です</li>
+      </ul>
+
+      <h3>指示（目的）の4種類</h3>
+      <ul>
+        <li><b>敵拠点へ最短で向かう</b> — 最短ルートで相手の拠点を目指します</li>
+        <li><b>この場を守る</b> — その場から動きません。攻撃範囲に敵が入れば通常通り攻撃します</li>
+        <li><b>敵キャラを積極的に追う</b> — 常に一番近い敵キャラを追いかけます</li>
+        <li><b>指定マスへ向かう</b> — 指定したマスまで移動し、到着後は「この場を守る」に切り替わります</li>
+      </ul>
+
+      <h3>クレジット</h3>
+      <p>使い切らなかったクレジットは次のラウンドに繰り越されます。各ラウンドの基礎支給額は以下の通りです。</p>
+      <table class="rules-table">
+        <tr><th>ラウンド</th><td>1</td><td>2</td><td>3</td><td>4</td></tr>
+        <tr><th>基礎クレジット</th><td>200</td><td>+300</td><td>+400</td><td>+500</td></tr>
+      </table>
+
+      <h3>戦闘フェイズ</h3>
+      <p>配置が終わると、両陣営のキャラが指示に従って自動的に行動します（移動・攻撃・スキル発動）。全キャラの行動力が尽きるか、これ以上盤面が動かなくなった時点で戦闘終了です。再生速度の変更・早送り・巻き戻しができます。</p>
+
+      <h3>勝敗</h3>
+      <ul>
+        <li><b>即時決着</b>: 相手キャラが全滅、または相手拠点（2個中1個以上）が陥落した時点で、その場で試合終了</li>
+        <li><b>ラウンド判定</b>（即時決着しなかった場合）: 拠点の残りHP合計 → そのラウンドの与ダメージ量 → 生存キャラ数、の順で比較。全部同じなら引き分けとして次ラウンドへ</li>
+        <li><b>4ラウンド終了時</b>: 行動力を使い切ったキャラはHPを消費して行動を続けるため、4ラウンド目は必ず即時決着で勝敗が付きます</li>
+      </ul>
+
+      <h3>キャラとスキル</h3>
+      <p>キャラごとにHP・攻撃力・行動力とスキル（最大2つ）が決まっています。購入画面でキャラにカーソルを合わせると、スキルの詳しい効果が確認できます。</p>
+    </div>
   </div>
 </div>
 
@@ -667,6 +754,12 @@
 
     <div class="placement-body" id="placementBody">
       <div class="col-board" id="boardSlotPlacement">
+        <div class="board-zoom-controls">
+          <button type="button" class="board-zoom-out" title="縮小">－</button>
+          <span class="board-zoom-label">100%</span>
+          <button type="button" class="board-zoom-in" title="拡大">＋</button>
+          <button type="button" class="board-zoom-reset" title="表示を戻す">リセット</button>
+        </div>
         <svg id="board"></svg>
       </div>
       <div class="inspector-strip" id="unitEditPanel" style="display:none;">
@@ -704,7 +797,14 @@
       <h2 id="battlePanelTitle">戦闘（P3+P4テスト）</h2>
     </div>
     <div class="battle-body">
-      <div class="battle-board-col" id="boardSlotBattle"></div>
+      <div class="battle-board-col" id="boardSlotBattle">
+        <div class="board-zoom-controls">
+          <button type="button" class="board-zoom-out" title="縮小">－</button>
+          <span class="board-zoom-label">100%</span>
+          <button type="button" class="board-zoom-in" title="拡大">＋</button>
+          <button type="button" class="board-zoom-reset" title="表示を戻す">リセット</button>
+        </div>
+      </div>
       <div class="panel controls battle-side">
         <div id="playbackControls" style="display:none;">
           <div class="status-line" id="tickLabel"></div>
@@ -1288,8 +1388,12 @@ function attackRangeCells(unit) {
     }
     return cells;
   }
+  // [バグ修正 2026-09-06] UC報告「アーチャーの攻撃範囲が周囲2マスだが、ボーナス+2で3マスのはず」。
+  // 設計書§8「射程ボーナスN: 攻撃範囲が全方位にNマス広がる」の通り、基礎の1マスにNを足す必要が
+  // あったが、誤ってボーナス値そのものを範囲にしていた（射程ボーナス2のアーチャーが2マスにしか
+  // ならず、本来の3マスに届いていなかった）
   const bonusSkill = char.skills.find(s => s.startsWith("射程ボーナス"));
-  const n = bonusSkill ? parseInt(bonusSkill.slice(6), 10) : 1;
+  const n = bonusSkill ? 1 + parseInt(bonusSkill.slice(6), 10) : 1;
   const cells = [];
   const minCol = Math.max(0, unit.col - 2 * n), maxCol = Math.min(COLS - 1, unit.col + 2 * n);
   const minRow = Math.max(0, unit.row - n), maxRow = Math.min(ROWS - 1, unit.row + n);
@@ -1623,6 +1727,25 @@ const svgH = VERT * (ROWS - 1) + HEX_H + PADDING * 2;
 svg.setAttribute("width", svgW);
 svg.setAttribute("height", svgH);
 svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
+
+// [UI 2026-09-06] UC要望「マップをズームインができるようにしてほしい」への対応。viewBoxは固定のまま
+// width/heightだけ拡大縮小することで、盤面svgの見た目のサイズを変える（内部座標系・クリック判定は
+// 不変）。svgは配置画面・戦闘画面で同じ要素を使い回している（enterBattleMode/exitBattleModeで
+// スロット間を移動）ため、両画面のズームボタンから同じ関数を呼べるようclassでまとめて拾う
+let boardZoom = 1;
+const BOARD_ZOOM_MIN = 0.6, BOARD_ZOOM_MAX = 2.6, BOARD_ZOOM_STEP = 0.2;
+function applyBoardZoom() {
+  svg.setAttribute("width", (svgW * boardZoom).toFixed(0));
+  svg.setAttribute("height", (svgH * boardZoom).toFixed(0));
+  document.querySelectorAll(".board-zoom-label").forEach(el => { el.textContent = `${Math.round(boardZoom * 100)}%`; });
+}
+function zoomBoardBy(delta) {
+  boardZoom = Math.max(BOARD_ZOOM_MIN, Math.min(BOARD_ZOOM_MAX, +(boardZoom + delta).toFixed(2)));
+  applyBoardZoom();
+}
+document.querySelectorAll(".board-zoom-in").forEach(b => b.addEventListener("click", () => zoomBoardBy(BOARD_ZOOM_STEP)));
+document.querySelectorAll(".board-zoom-out").forEach(b => b.addEventListener("click", () => zoomBoardBy(-BOARD_ZOOM_STEP)));
+document.querySelectorAll(".board-zoom-reset").forEach(b => b.addEventListener("click", () => { boardZoom = 1; applyBoardZoom(); }));
 
 const nsSVG = "http://www.w3.org/2000/svg";
 function el(tag, attrs) {
@@ -2138,14 +2261,17 @@ function handlePlaceUnit(col, row) {
   // ユニット同士が表示側(Map: battleMarkerEls/entityById)で同じマーカー・ログ表示を取り合ってしまい、
   // 「敵陣へ瞬間移動」「味方で戦闘しているように見える」「一方が全く動かない」という不具合になっていた
   // （UC報告・実機再現で特定）。owner文字列を含めることで衝突を構造的に無くす。
+  const newUnitId = `${player}_${++unitSeq}`;
   units.push({
     // [UI 2026-09-05] UC要望によりデフォルトの指示を「守る」→「敵拠点へ最短で向かう」に変更
-    id: `${player}_${++unitSeq}`, owner: player, charId: char.id, col, row,
+    id: newUnitId, owner: player, charId: char.id, col, row,
     purpose: "rush", targetHex: null, facing: needsFacing(char) ? 0 : null,
   });
   queue[player] = queue[player].filter(q => q.qid !== selectedQueueEntry.qid);
   mode = "idle";
   selectedQueueEntry = null;
+  // [UI 2026-09-06] UC要望「置いたキャラにはすぐ指示が出せるように選択状態に」への対応
+  selectedUnitId = newUnitId;
   showStatus(`${char.name}を配置しました（指示: 敵拠点へ最短で向かう）。必要なら変更してください。`);
   render();
 }
@@ -2175,8 +2301,13 @@ function buyCharacter(player, charId) {
   const char = getCharacter(charId); // 価格・名前は常に基礎値（購入コスト自体は星で変わらない）
   if (credits[player] < char.price) { showStatus("クレジットが足りません。"); return; }
   credits[player] -= char.price;
-  queue[player].push({ qid: ++queueSeq, charId });
-  showStatus(`${char.name}を購入しました（配置待ちに追加）。`);
+  // [UI 2026-09-06] UC要望「購入したキャラを選択状態にする」への対応。購入直後にそのまま盤面を
+  // タップして配置できるよう、queueへの追加と同時に配置待ち状態（mode="placeUnit"）にする
+  const entry = { qid: ++queueSeq, charId };
+  queue[player].push(entry);
+  mode = "placeUnit";
+  selectedQueueEntry = entry;
+  showStatus(`${char.name}を購入しました。盤面をクリックして配置してください。`);
   render();
 }
 
@@ -2352,6 +2483,13 @@ document.getElementById("openShopBtn").addEventListener("click", () => shopScrim
 document.getElementById("closeShopBtn").addEventListener("click", () => shopScrim.classList.remove("open"));
 shopScrim.addEventListener("click", (e) => { if (e.target === shopScrim) shopScrim.classList.remove("open"); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") shopScrim.classList.remove("open"); });
+
+// [UI 2026-09-06] UC要望「ルール説明ボタンを最初の画面に追加したい」への対応
+const rulesScrim = document.getElementById("rulesScrim");
+document.getElementById("rulesBtn").addEventListener("click", () => rulesScrim.classList.add("open"));
+document.getElementById("closeRulesBtn").addEventListener("click", () => rulesScrim.classList.remove("open"));
+rulesScrim.addEventListener("click", (e) => { if (e.target === rulesScrim) rulesScrim.classList.remove("open"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") rulesScrim.classList.remove("open"); });
 
 /* ==================== P4: 戦闘演出（ログ再生専用。ロジックの再計算はしない） ==================== */
 
@@ -3037,9 +3175,14 @@ function advanceToNextRound() {
   units.length = 0;
   for (const u of outcome.units) {
     if (!u.alive) continue;
+    // [UI 2026-09-06] UC要望「目標マスにたどり着き次のラウンドに行ったキャラの指示は、その場を守る
+    // ではなく拠点を攻める（rush）に変更してほしい」への対応。「指定マスへ向かう」が目標到達済みだと
+    // 戦闘中にpurposeが自動で"guard"へ切り替わる（targetHexは消さずに残る）仕様を利用し、手動で
+    // 「守る」を選んだ場合（setUnitPurposeが必ずtargetHexをnullにする）と区別する
+    const reachedGoto = u.purpose === "guard" && u.targetHex;
     units.push({
       id: u.id, owner: u.owner, charId: u.charId, col: u.col, row: u.row,
-      purpose: u.purpose, targetHex: u.targetHex ? { ...u.targetHex } : null, facing: u.facing,
+      purpose: reachedGoto ? "rush" : u.purpose, targetHex: reachedGoto ? null : (u.targetHex ? { ...u.targetHex } : null), facing: u.facing,
       hp: u.hp, poisoned: !!u.poisoned, apCarry: u.carryoverAp || 0,
     });
   }
