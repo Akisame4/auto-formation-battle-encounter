@@ -2391,6 +2391,20 @@ const EVENT_LABELS = {
   followMove: "追従移動", musouRecover: "無双発動", purposeChange: "指示変更", stay: "停止", trapSet: "罠設置",
 };
 
+// [UI 2026-09-06] UC報告「ログを見ると同じtickで同じ名前のキャラが移動と攻撃を両方していて
+// おかしい」への対応。実際には同じ陣営に同キャラが複数体いて片方が移動・片方が攻撃していただけ
+// だったが、ログ上は名前(P1/P2)だけでは見分けが付かなかった。同じ所有者・同じキャラ種が複数いる
+// 時だけ「ランサー:1」のように配置順の通し番号を付けて区別できるようにする
+function unitIndexSuffix(entity) {
+  if (entity.isBase) return "";
+  const siblings = displayState.units
+    .filter(u => u.owner === entity.owner && u.charId === entity.charId)
+    .sort((a, b) => seqPartOfUnitId(a.id) - seqPartOfUnitId(b.id));
+  if (siblings.length <= 1) return "";
+  const idx = siblings.findIndex(u => u.id === entity.id);
+  return idx === -1 ? "" : `:${idx + 1}`;
+}
+
 // [UI 2026-08-23] キャラ名だけだと両陣営が同じキャラを使っている時に「味方同士で戦闘しているように見える」
 // とのUC報告があったため、拠点と同様にキャラにも(P1)/(P2)を付けて所属を明示する。
 // [UI 2026-09-06] チームカラー付きのspanで返すようHTML化（ログの色分け用）。拠点も対応
@@ -2400,7 +2414,7 @@ function entityLabelHtml(id) {
   const tag = entity.owner === "player1" ? "P1" : "P2";
   const cls = entity.owner === "player1" ? "p1" : "p2";
   const name = entity.isBase ? "拠点" : getCharacter(entity.charId).name;
-  return `<span class="who ${cls}">${name}(${tag})</span>`;
+  return `<span class="who ${cls}">${name}${unitIndexSuffix(entity)}(${tag})</span>`;
 }
 
 // [UI 2026-09-06] UC要望「バトルログをお洒落にしたい。移動は目立たせなくていいがスキルは
@@ -2430,7 +2444,7 @@ function appendLogLine(ev) {
       card.innerHTML =
         `<div class="portrait"><img src="${charFaceSrc(entity.charId)}" alt="" onerror="this.style.display='none'"></div>` +
         `<div class="body">` +
-        `<div class="nameline"><span class="n">${getCharacter(entity.charId).name}(${tag})</span><span class="tick">t${ev.tick}</span></div>` +
+        `<div class="nameline"><span class="n">${getCharacter(entity.charId).name}${unitIndexSuffix(entity)}(${tag})</span><span class="tick">t${ev.tick}</span></div>` +
         `<div class="skillname">${skillNameFn(ev)}発動</div>` +
         `</div>`;
       feed.appendChild(card);
