@@ -239,10 +239,11 @@
 
   /* [UI 2026-09-06] UC要望「指示は盤面の右側のアイドルスペースにボタン置けないかな」への対応。
      盤面(.col-board)は横幅に余裕があり右側が常に空いていたため、指示パネルをそこへ移した。
-     未選択時は1カラムのまま（盤面が中央に広がる）、選択時だけ右にサイドバーとして現れる */
-  .placement-body { display: grid; grid-template-columns: 1fr; }
-  .placement-body.has-selection { grid-template-columns: 1fr 240px; }
-  @media (max-width: 900px) { .placement-body.has-selection { grid-template-columns: 1fr; } }
+     [UI 2026-09-06追記] 選択時だけ2カラムに切り替える実装だと、パネル出現のたびに盤面側の
+     カラム幅が変わって盤面（.col-boardの中央寄せ）が左右にずれてしまうとUC指摘。常に2カラムを
+     確保しておき、パネルの中身をdisplay:noneで隠すだけにすることで、盤面の位置を固定した */
+  .placement-body { display: grid; grid-template-columns: 1fr 240px; }
+  @media (max-width: 900px) { .placement-body { grid-template-columns: 1fr; } }
 
   .inspector-strip {
     padding: 14px; border-left: 1px solid var(--panel-border); background: var(--panel);
@@ -2030,21 +2031,39 @@ function renderQueueList() {
 function renderUnitEditPanel() {
   const panel = document.getElementById("unitEditPanel");
   const content = document.getElementById("unitEditContent");
-  const body = document.getElementById("placementBody");
   const unit = units.find(u => u.id === selectedUnitId);
-  if (!unit) { panel.style.display = "none"; body.classList.remove("has-selection"); return; }
+  if (!unit) { panel.style.display = "none"; return; }
   // [UI 2026-09-06] UC要望「指示は盤面の右側のアイドルスペースに」への対応。以前は購入待ちキューの上に
   // 全幅の横帯として表示していたが、盤面の右に空きスペースがあったため、そこにサイドパネルとして
-  // 表示するよう変更（未選択時は`.placement-body`が1カラムに戻り、盤面が中央に広がる）
+  // 表示するよう変更。[UI 2026-09-06追記] `.placement-body`のカラム数は常に固定（CSS側）にし、
+  // ここではパネルの表示/非表示だけを切り替える（盤面がずれないように）
   panel.style.display = "block";
-  body.classList.add("has-selection");
   const char = getCharacter(unit.charId);
   const ownerLabel = unit.owner === "player1" ? "プレイヤー1" : "プレイヤー2";
+  const curHp = unit.hp != null ? unit.hp : char.hp;
+
+  // [UI 2026-09-06] UC要望「タップすると敵のキャラのステータスや残りHPが分かるようにする」への対応。
+  // 相手のキャラは閲覧専用（ステータス・残りHP・スキルは見えるが、指示は秘匿ルールにより非表示）
+  if (unit.owner !== currentPlayer) {
+    let html = `<div class="inspector-who">` +
+      `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
+      `<div class="meta"><div class="n">${char.name}</div>` +
+      `<div class="p">${ownerLabel}（相手）・col${unit.col},row${unit.row}</div></div>` +
+      `</div>`;
+    html += `<div class="hint">残りHP ${curHp}/${char.hp}　攻${char.atk}　行動力${char.ap}</div>`;
+    html += `<div class="skill-pills">${skillPillsHtml(char.skills)}</div>`;
+    html += `<div class="hint">相手の指示（目的）は秘匿のため見えません。</div>`;
+    html += `<div class="inspector-spacer"></div>`;
+    html += `<button id="deselectUnitBtn" class="close-btn">選択解除</button>`;
+    content.innerHTML = html;
+    content.querySelector("#deselectUnitBtn").addEventListener("click", () => { selectedUnitId = null; render(); });
+    return;
+  }
 
   let html = `<div class="inspector-who">` +
     `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
     `<div class="meta"><div class="n">${char.name}</div>` +
-    `<div class="p">${ownerLabel}・col${unit.col},row${unit.row}・HP${char.hp}/攻${char.atk}/行動${char.ap}</div></div>` +
+    `<div class="p">${ownerLabel}・col${unit.col},row${unit.row}・HP${curHp}/${char.hp}・攻${char.atk}・行動${char.ap}</div></div>` +
     `</div>`;
   html += `<div class="purpose-row" id="purposeGroup">`;
   for (const p of PURPOSES) {
@@ -2141,10 +2160,12 @@ function handleSetTarget(col, row) {
   render();
 }
 
+// [UI 2026-09-06] UC要望「タップすると敵のキャラのステータスや残りHPが分かるようにする」への対応。
+// 相手のキャラも選択できるようにし、renderUnitEditPanel()側でowner判定して閲覧専用表示に切り替える
+// （指示の変更・移動・返却などの操作はcurrentPlayer所有のユニットのみ、他の箇所で引き続きガードする）
 function selectUnitForEdit(unitId) {
   const unit = units.find(u => u.id === unitId);
   if (!unit) return;
-  if (unit.owner !== currentPlayer) { showStatus("自分のキャラのみ選択できます（設置プレイヤーを切り替えてください）。"); return; }
   selectedUnitId = unitId;
   showStatus("");
   render();
@@ -2537,18 +2558,27 @@ function applyEventsForTick(tickEvents) {
   const duration = 350 / playbackSpeed;
   for (const ev of tickEvents) {
     switch (ev.type) {
-      case "move": case "push": case "pull": case "followMove": {
-        const entity = findDisplayEntity(ev.unitId != null ? ev.unitId : ev.targetId);
+      case "move": case "followMove": {
+        const entity = findDisplayEntity(ev.unitId);
         entity.col = ev.to.col; entity.row = ev.to.row;
         moveMarkerTo(entity, duration);
         if (ev.type === "move" && ev.apCost) { // [UI 2026-09-05] 行動力の消費を反映（ハイライト判定用）
           entity.ap -= ev.apCost;
           updateMarkerActivity(entity);
         }
-        // [UI 2026-09-06] スキル発動位置にスキル名を表示（移動後の位置に表示）
-        if (ev.type === "followMove") spawnSkillLabel(entity.col, entity.row, "追従");
-        else if (ev.type === "push") spawnSkillLabel(entity.col, entity.row, "押し込み");
-        else if (ev.type === "pull") spawnSkillLabel(entity.col, entity.row, "引き寄せ");
+        if (ev.type === "followMove") spawnSkillLabel(entity.col, entity.row, "追従"); // [UI 2026-09-06]
+        break;
+      }
+      // [バグ修正 2026-09-06] UC報告「ガーディアンが押し込み発動したら一緒についていった」。
+      // push/pull は本来「対象(targetId)」が動くイベントだが、共通caseで
+      // `ev.unitId != null ? ev.unitId : ev.targetId` としていたため、押し込み/引き寄せの
+      // ログにunitId（発動者=attacker）を追加した際（スキルログカード機能用）、意図せず
+      // 発動者側のマーカーが対象と一緒に動いてしまう回帰バグになっていた。targetId固定に修正
+      case "push": case "pull": {
+        const entity = findDisplayEntity(ev.targetId);
+        entity.col = ev.to.col; entity.row = ev.to.row;
+        moveMarkerTo(entity, duration);
+        spawnSkillLabel(entity.col, entity.row, ev.type === "push" ? "押し込み" : "引き寄せ");
         break;
       }
       case "attack": { // [UI 2026-09-05] 攻撃でも行動力を消費するのでハイライト判定を更新
@@ -2962,10 +2992,9 @@ function interpretRoundOutcome(battleResultInput, unitsInput, basesInput, isRoun
 
 // R2〜R4の基礎クレジット額（設計書§7、2026-08-19確定）。
 // [P7 2026-08-22] §6-3のHP→行動力変換を実装したのでR3→R4のブロックを解除
-// [バランス調整 2026-09-06] UC報告「今めっちゃ買えるから少なくしたい」への対応。
-// 旧値(2:500, 3:400, 4:600)だと繰越と合わさりR2時点でほぼ全キャラ購入可能になっていたため、
-// R1の200crと同程度の感覚で毎ラウンド新規2体前後だけ増強できる水準まで引き下げた
-const ROUND_BASE_CREDITS = { 2: 200, 3: 200, 4: 300 };
+// [バランス調整 2026-09-06] UC指示「1R200 2R300 3R400 4R500にしよう」により、
+// R1と同じ200から始まりラウンドごとに+100ずつ増える単調増加の値に変更（旧: 2:200, 3:200, 4:300）
+const ROUND_BASE_CREDITS = { 2: 300, 3: 400, 4: 500 };
 
 function advanceToNextRound() {
   const outcome = roundOutcome;
