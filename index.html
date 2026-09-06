@@ -393,7 +393,35 @@
     border-radius: 5px;
     padding: 4px 6px;
     line-height: 1.5;
+    display: flex; flex-direction: column; gap: 3px;
   }
+  /* [UI 2026-09-06] バトルログの演出強化（UC要望「バトルログをお洒落にしたい」）。
+     移動は最小限に、スキル発動だけ肖像カードで目立たせる（格闘ゲームのコンボ表示的な発想） */
+  .log-move { display: flex; align-items: center; gap: 5px; padding: 0 2px; opacity: 0.55; font-size: 0.92em; }
+  .log-move .dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .log-line { padding: 1px 2px; }
+  .who { font-weight: 700; }
+  .who.p1 { color: var(--p1); }
+  .who.p2 { color: var(--p2); }
+  .log-line .dmg { color: #ef4444; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .log-line .heal { color: var(--ok); font-weight: 700; }
+  .log-skillcard {
+    display: flex; gap: 8px; padding: 6px; border-radius: 7px; margin: 2px 0;
+    background: rgba(255,212,121,0.06); border: 1px solid rgba(255,212,121,0.35);
+  }
+  .log-skillcard.p1 { border-color: rgba(74,144,217,0.45); background: rgba(74,144,217,0.09); }
+  .log-skillcard.p2 { border-color: rgba(217,87,74,0.45); background: rgba(217,87,74,0.09); }
+  .log-skillcard .portrait {
+    width: 36px; height: 36px; border-radius: 6px; overflow: hidden; flex-shrink: 0; background: #000;
+  }
+  .log-skillcard .portrait img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .log-skillcard .body { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+  .log-skillcard .nameline { font-size: 0.86em; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .log-skillcard .nameline .tick { font-weight: 400; color: var(--text-faint); }
+  .log-skillcard.p1 .nameline .n { color: var(--p1); }
+  .log-skillcard.p2 .nameline .n { color: var(--p2); }
+  .log-skillcard .skillname { font-size: 0.9em; font-weight: 700; color: var(--accent); }
+  .log-skillcard .skillname::before { content: "✦ "; }
   .speed-btn.active { border-color: #ffd479; color: #ffd479; }
   @keyframes floatUp {
     0% { transform: translateY(0); opacity: 1; }
@@ -1346,7 +1374,7 @@ function resolveAttack(state, attacker, target, rng, log, tick, opts) {
 
   if (!isExtra && !target.isBase && attackerChar.skills.includes("毒") && !target.poisoned) {
     target.poisoned = true;
-    log.push({ tick, type: "poison", targetId: target.id });
+    log.push({ tick, type: "poison", unitId: attacker.id, targetId: target.id });
   }
   if (!isExtra) {
     if (attackerChar.skills.includes("押し込み") && rng() < 0.5) applyPush(state, attacker, target, log, tick);
@@ -1366,7 +1394,7 @@ function applyPush(state, attacker, target, log, tick) {
     cur = next;
   }
   if (cur.col !== target.col || cur.row !== target.row) {
-    log.push({ tick, type: "push", targetId: target.id, from: { col: target.col, row: target.row }, to: cur });
+    log.push({ tick, type: "push", unitId: attacker.id, targetId: target.id, from: { col: target.col, row: target.row }, to: cur });
     target.col = cur.col; target.row = cur.row;
   }
 }
@@ -1378,7 +1406,7 @@ function applyPull(state, attacker, target, log, tick) {
   const dest = axialToOffset(aq + dir.dq, ar + dir.dr);
   if (dest.col === target.col && dest.row === target.row) return;
   if (!inBounds(dest.col, dest.row) || isWall(dest.col, dest.row) || isOccupied(state, dest.col, dest.row, target.id)) return;
-  log.push({ tick, type: "pull", targetId: target.id, from: { col: target.col, row: target.row }, to: dest });
+  log.push({ tick, type: "pull", unitId: attacker.id, targetId: target.id, from: { col: target.col, row: target.row }, to: dest });
   target.col = dest.col; target.row = dest.row;
 }
 
@@ -2259,7 +2287,7 @@ let eventsByTick = [];     // eventsByTick[tick] = そのtickのイベント配�
 let playbackTick = 0;
 let playbackTimer = null;
 let playbackSpeed = 1;
-const battleMarkerEls = new Map(); // entityId -> {g, circle, label, hpFill, poisonDot, r, isBase}
+const battleMarkerEls = new Map(); // entityId -> {g, circle, label, hpBg, hpFill, poisonDot, r, isBase}
 
 function tweenAttr(node, attrs, duration) {
   const start = {};
@@ -2295,7 +2323,7 @@ function createBattleMarker(entity, isBase) {
   const poisonDot = el("circle", { cx: x + r * 0.6, cy: y - r * 0.6, r: "3", fill: "#a855f7", visibility: entity.poisoned ? "visible" : "hidden" });
   g.append(hpBg, hpFill, poisonDot);
   gBattleUnits.appendChild(g);
-  battleMarkerEls.set(entity.id, { g, circle, label, hpFill, poisonDot, r, isBase, charImg });
+  battleMarkerEls.set(entity.id, { g, circle, label, hpBg, hpFill, poisonDot, r, isBase, charImg });
 }
 
 function updateMarkerHpBar(entity) {
@@ -2322,6 +2350,7 @@ function moveMarkerTo(entity, duration) {
   const p = hexCenter(entity.col, entity.row);
   tweenAttr(m.circle, { cx: p.x, cy: p.y }, duration);
   tweenAttr(m.label, { x: p.x, y: p.y + 3 }, duration);
+  tweenAttr(m.hpBg, { x: p.x - 14, y: p.y - m.r - 8 }, duration);
   tweenAttr(m.hpFill, { x: p.x - 14, y: p.y - m.r - 8 }, duration);
   tweenAttr(m.poisonDot, { cx: p.x + m.r * 0.6, cy: p.y - m.r * 0.6 }, duration);
   if (m.charImg) { // [UI 2026-08-25] キャラ画像・そのクリップ円も追従させる
@@ -2363,24 +2392,76 @@ const EVENT_LABELS = {
 };
 
 // [UI 2026-08-23] キャラ名だけだと両陣営が同じキャラを使っている時に「味方同士で戦闘しているように見える」
-// とのUC報告があったため、拠点と同様にキャラにも(P1)/(P2)を付けて所属を明示する
-function entityLabel(id) {
+// とのUC報告があったため、拠点と同様にキャラにも(P1)/(P2)を付けて所属を明示する。
+// [UI 2026-09-06] チームカラー付きのspanで返すようHTML化（ログの色分け用）。拠点も対応
+function entityLabelHtml(id) {
   const entity = findDisplayEntity(id);
   if (!entity) return String(id);
   const tag = entity.owner === "player1" ? "P1" : "P2";
-  return entity.isBase ? `拠点(${tag})` : `${getCharacter(entity.charId).name}(${tag})`;
+  const cls = entity.owner === "player1" ? "p1" : "p2";
+  const name = entity.isBase ? "拠点" : getCharacter(entity.charId).name;
+  return `<span class="who ${cls}">${name}(${tag})</span>`;
 }
+
+// [UI 2026-09-06] UC要望「バトルログをお洒落にしたい。移動は目立たせなくていいがスキルは
+// わかりやすく」への対応。発動の瞬間が明確なスキル（盤面のふわっとラベル表示と同じ対象）だけ
+// 肖像カードで強調する。それ以外（攻撃・移動・撃破等）は今まで通り軽量な1行のまま
+const SKILL_CARD_NAME = {
+  linkedAttack: (ev) => ev.skill || "連携攻撃",
+  push: () => "押し込み",
+  pull: () => "引き寄せ",
+  followMove: () => "追従",
+  poison: () => "毒",
+  trapSet: () => "罠設置",
+  musouRecover: () => "無双",
+};
 
 function appendLogLine(ev) {
   const feed = document.getElementById("battleLogFeed");
+
+  const skillNameFn = SKILL_CARD_NAME[ev.type];
+  if (skillNameFn && ev.unitId != null) {
+    const entity = findDisplayEntity(ev.unitId);
+    if (entity) {
+      const card = document.createElement("div");
+      const tag = entity.owner === "player1" ? "P1" : "P2";
+      const cls = entity.owner === "player1" ? "p1" : "p2";
+      card.className = `log-skillcard ${cls}`;
+      card.innerHTML =
+        `<div class="portrait"><img src="${charFaceSrc(entity.charId)}" alt="" onerror="this.style.display='none'"></div>` +
+        `<div class="body">` +
+        `<div class="nameline"><span class="n">${getCharacter(entity.charId).name}(${tag})</span><span class="tick">t${ev.tick}</span></div>` +
+        `<div class="skillname">${skillNameFn(ev)}発動</div>` +
+        `</div>`;
+      feed.appendChild(card);
+      feed.scrollTop = feed.scrollHeight;
+      return;
+    }
+  }
+
+  if (ev.type === "move") {
+    const div = document.createElement("div");
+    div.className = "log-move";
+    div.innerHTML = `<span class="dot"></span>[t${ev.tick}] ${entityLabelHtml(ev.unitId)} 移動`;
+    feed.appendChild(div);
+    feed.scrollTop = feed.scrollHeight;
+    return;
+  }
+
   const div = document.createElement("div");
-  let text = `[t${ev.tick}] ${EVENT_LABELS[ev.type] || ev.type}`;
-  if (ev.unitId != null) text += ` ${entityLabel(ev.unitId)}`;
-  if (ev.targetId != null) text += ` → ${entityLabel(ev.targetId)}`;
-  if (ev.amount != null) text += ` (${ev.amount})`;
-  div.textContent = text;
+  div.className = "log-line";
+  let html = `[t${ev.tick}] ${EVENT_LABELS[ev.type] || ev.type}`;
+  if (ev.unitId != null) html += ` ${entityLabelHtml(ev.unitId)}`;
+  if (ev.targetId != null) html += ` → ${entityLabelHtml(ev.targetId)}`;
+  if (ev.amount != null) {
+    const sign = ev.type === "heal" ? "+" : "-";
+    const cls = ev.type === "heal" ? "heal" : "dmg";
+    html += ` <span class="${cls}">${sign}${ev.amount}</span>`;
+  }
+  div.innerHTML = html;
   feed.appendChild(div);
   feed.scrollTop = feed.scrollHeight;
+  return;
 }
 
 function applyEventsForTick(tickEvents) {
@@ -2557,6 +2638,7 @@ function skipToEnd() {
     const p = hexCenter(entity.col, entity.row);
     m.circle.setAttribute("cx", p.x); m.circle.setAttribute("cy", p.y);
     m.label.setAttribute("x", p.x); m.label.setAttribute("y", p.y + 3);
+    m.hpBg.setAttribute("x", p.x - 14); m.hpBg.setAttribute("y", p.y - m.r - 8);
     m.hpFill.setAttribute("x", p.x - 14); m.hpFill.setAttribute("y", p.y - m.r - 8);
     m.poisonDot.setAttribute("cx", p.x + m.r * 0.6); m.poisonDot.setAttribute("cy", p.y - m.r * 0.6);
     m.poisonDot.setAttribute("visibility", entity.poisoned ? "visible" : "hidden");
