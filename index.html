@@ -472,6 +472,7 @@
 
   /* ==================== ロビー画面（入口） ==================== */
   #lobbyScreen { display: flex; justify-content: center; padding: 24px 16px 40px; }
+  #deckScreen { display: flex; justify-content: center; padding: 24px 16px 40px; }
   .lobby-hexfield {
     position: relative;
     width: 100%; max-width: 640px;
@@ -573,11 +574,67 @@
   .lobby-matched-badge { font-size: 1.1em; font-weight: 700; color: var(--ok); margin-bottom: 6px; }
   .lobby-matched-sub { color: var(--text-dim); font-size: 0.86em; }
   .lobby-msg { margin-top: 16px; color: var(--accent); font-size: 0.85em; min-height: 1.2em; text-align: center; }
+
+  /* ==================== デッキ編成画面 ==================== */
+  .deck-slot-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+  .deck-slot-card {
+    background: #20242f; border: 1px solid var(--panel-border); border-radius: 10px;
+    padding: 13px 14px; display: flex; align-items: center; gap: 12px; cursor: pointer;
+  }
+  .deck-slot-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .deck-slot-radio { width: 15px; height: 15px; border-radius: 50%; border: 2px solid #5c6479; flex-shrink: 0; }
+  .deck-slot-card.active .deck-slot-radio { border-color: var(--accent); background: var(--accent); }
+  .deck-slot-info { flex: 1; min-width: 0; }
+  .deck-slot-name { font-size: 0.9em; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deck-slot-count { font-size: 0.76em; color: var(--text-dim); margin-top: 2px; }
+  .deck-slot-edit-btn {
+    flex-shrink: 0; background: transparent; border: 1px solid #3d4356; color: var(--text);
+    border-radius: 8px; padding: 7px 12px; font-size: 0.8em; cursor: pointer; font-family: inherit;
+  }
+  .deck-slot-edit-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
+  .deck-edit-modal { width: min(760px, 100%); }
+  .deck-name-input {
+    background: var(--bg); border: 1px solid var(--panel-border); border-radius: 6px; color: var(--text);
+    padding: 7px 10px; font-size: 0.9em; font-family: inherit; flex: 1; min-width: 0;
+  }
+  .deck-count-pill { font-size: 0.8em; color: var(--text-dim); white-space: nowrap; }
+  .deck-edit-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 18px 16px; }
+  .hcard.deck-pick { cursor: pointer; }
 </style>
 </head>
 <body>
 
-<div id="lobbyScreen">
+<div id="deckScreen" style="display:none;">
+  <div class="lobby-hexfield">
+    <div class="lobby-state">
+      <div class="lobby-brand">
+        <p class="lobby-mark">AFBE</p>
+        <p class="lobby-full">デッキ編成</p>
+      </div>
+      <div class="lobby-card">
+        <div id="deckSlotList" class="deck-slot-list"></div>
+        <button id="proceedToLobbyBtn" class="lobby-btn lobby-btn-primary" style="margin-top:14px;">対戦へ進む</button>
+      </div>
+      <div id="deckScreenMsg" class="lobby-msg"></div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="deckEditScrim">
+  <div class="shop-modal deck-edit-modal">
+    <div class="shop-modal-head">
+      <input type="text" id="deckNameInput" class="deck-name-input" maxlength="20" placeholder="デッキ名">
+      <span class="deck-count-pill" id="deckCountLabel">0/12</span>
+      <button class="shop-modal-close" id="closeDeckEditBtn">✕</button>
+    </div>
+    <div class="shop-grid" id="deckEditGrid"></div>
+    <div class="deck-edit-actions">
+      <button id="saveDeckBtn" class="lobby-btn lobby-btn-primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="lobbyScreen" style="display:none;">
   <div class="lobby-hexfield">
 
     <div id="lobbyStateA" class="lobby-state">
@@ -695,7 +752,7 @@
   </div>
 </div>
 
-<div id="pageHeader">
+<div id="pageHeader" style="display:none;">
   <h1>AFBE（Formation Battle Encounter）</h1>
   <div class="subtitle" id="pageSubtitle">盤面基盤（拠点は固定位置） + 配置フェイズ — キャラ購入・配置 / 指示・向き設定（開発テスト用）</div>
 </div>
@@ -861,12 +918,23 @@
  *     hostOnline    : bool（onDisconnectで自動false化）
  *     guestOnline   : bool（onDisconnectで自動false化）
  *     placements/
- *       player1/ { bases:[...], units:[...], credits, ready:bool }
- *       player2/ { bases:[...], units:[...], credits, ready:bool }
+ *       player1/ { bases:[...], units:[...], credits, ready:bool, pool:[...] }
+ *       player2/ { bases:[...], units:[...], credits, ready:bool, pool:[...] }
  * 秘匿は「クライアントが相手側placementsを配置フェイズ中は読んでもローカル状態に取り込まない・描画しない」という
  * UI制御のみで実現する（開発者ツールで覗けば見えてしまう制約はUC了承済み）。
  * 戦闘結果自体は同期しない。両者readyでseedとplacementsが揃った時点で各クライアントがsimulateBattle()を
  * ローカルで独立実行し、共有シードにより同一結果になることを担保する（設計原則§5-2）。
+ *
+ * [デッキ機能] 上記とは別に /decks/{deviceId}/ ツリーがある（deviceIdはlocalStorageに永続する擬似
+ * アカウントID、ログイン機能はまだ無いためこれで代用）:
+ *   /decks/{deviceId}/
+ *     activeSlot : 0 | 1 | 2（現在選択中のデッキ枠）
+ *     slots/
+ *       "0"/ { name, characterIds:[...], updatedAt }
+ *       "1"/ { ... }
+ *       "2"/ { ... }
+ * R1の抽選プールは各プレイヤーが自分のアクティブデッキから独立に引く（相手のデッキ内容は非公開情報
+ * なのでroomsツリー側で同期する必要はない）。
  * ==================================================================== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
@@ -885,6 +953,152 @@ const firebaseConfig = {
 };
 const fbApp = initializeApp(firebaseConfig);
 const db = getDatabase(fbApp);
+
+/* ==================== デッキ編成 ====================
+ * スキーマ・設計方針は上の[デッキ機能]コメントを参照。呼び出しはすべてinitApp()（ファイル末尾）
+ * より後になるため、ここで参照しているCHARACTERS/DECK_SIZE/deviceId等は定義順を気にしなくてよい
+ * （関数定義時ではなく呼び出し時に解決されるため）。
+ * ==================================================================== */
+let deckState = { slots: {}, activeSlot: 0 };
+let editingDeckSlot = null; // 現在エディタで開いているスロット番号（null＝未オープン）
+let editingDeckIds = new Set();
+
+function showDeckScreenMsg(text) { document.getElementById("deckScreenMsg").textContent = text; }
+
+async function loadDecks() {
+  const snap = await get(ref(db, `decks/${deviceId}`));
+  if (!snap.exists()) {
+    const defaultIds = CHARACTERS.map(c => c.id).slice(0, DECK_SIZE);
+    deckState = { activeSlot: 0, slots: { 0: { name: "デッキ1", characterIds: defaultIds } } };
+    await set(ref(db, `decks/${deviceId}`), {
+      activeSlot: 0,
+      slots: { 0: { name: "デッキ1", characterIds: defaultIds, updatedAt: serverTimestamp() } },
+    });
+  } else {
+    const data = snap.val();
+    deckState = { activeSlot: data.activeSlot || 0, slots: data.slots || {} };
+  }
+  const activeDeck = deckState.slots[deckState.activeSlot];
+  myDeckCharacterIds = (activeDeck && activeDeck.characterIds && activeDeck.characterIds.length)
+    ? activeDeck.characterIds : CHARACTERS.map(c => c.id);
+}
+
+function renderDeckScreen() {
+  const container = document.getElementById("deckSlotList");
+  container.innerHTML = "";
+  for (let i = 0; i < DECK_SLOT_COUNT; i++) {
+    const slot = deckState.slots[i];
+    const isActive = deckState.activeSlot === i;
+    const card = document.createElement("div");
+    card.className = "deck-slot-card" + (isActive ? " active" : "");
+    const name = slot ? slot.name : `デッキ${i + 1}（未作成）`;
+    const count = slot && slot.characterIds ? slot.characterIds.length : 0;
+    card.innerHTML =
+      `<div class="deck-slot-radio"></div>` +
+      `<div class="deck-slot-info"><div class="deck-slot-name">${name}</div>` +
+      `<div class="deck-slot-count">${count}/${DECK_SIZE}体</div></div>` +
+      `<button type="button" class="deck-slot-edit-btn">編集</button>`;
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".deck-slot-edit-btn")) return;
+      selectActiveSlot(i);
+    });
+    card.querySelector(".deck-slot-edit-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openDeckEditor(i);
+    });
+    container.appendChild(card);
+  }
+  const activeDeck = deckState.slots[deckState.activeSlot];
+  document.getElementById("proceedToLobbyBtn").disabled =
+    !activeDeck || !activeDeck.characterIds || activeDeck.characterIds.length === 0;
+}
+
+function openDeckEditor(slotIndex) {
+  editingDeckSlot = slotIndex;
+  const slot = deckState.slots[slotIndex];
+  document.getElementById("deckNameInput").value = slot ? slot.name : `デッキ${slotIndex + 1}`;
+  editingDeckIds = new Set(slot && slot.characterIds ? slot.characterIds : []);
+  renderDeckEditGrid();
+  document.getElementById("deckEditScrim").classList.add("open");
+}
+
+function renderDeckEditGrid() {
+  const grid = document.getElementById("deckEditGrid");
+  grid.innerHTML = "";
+  for (const char of CHARACTERS) {
+    const selected = editingDeckIds.has(char.id);
+    const card = document.createElement("div");
+    card.className = "hcard deck-pick" + (selected ? " selected" : "");
+    card.innerHTML =
+      `<div class="h-banner">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
+      `<div class="h-body"><div class="h-name">${char.name}</div>` +
+      statBarsHtml(char) +
+      `<div class="skill-pills">${skillPillsHtml(char.skills)}</div></div>`;
+    card.title = allSkillsTooltip(char.skills);
+    card.addEventListener("click", () => toggleDeckCharacter(char.id));
+    grid.appendChild(card);
+  }
+  document.getElementById("deckCountLabel").textContent = `${editingDeckIds.size}/${DECK_SIZE}`;
+}
+
+function toggleDeckCharacter(charId) {
+  if (editingDeckIds.has(charId)) {
+    editingDeckIds.delete(charId);
+  } else {
+    if (editingDeckIds.size >= DECK_SIZE) { showDeckScreenMsg(`デッキには最大${DECK_SIZE}体までしか入れられません。`); return; }
+    editingDeckIds.add(charId);
+  }
+  renderDeckEditGrid();
+}
+
+async function saveDeckSlot() {
+  if (editingDeckSlot === null) return;
+  const name = document.getElementById("deckNameInput").value.trim() || `デッキ${editingDeckSlot + 1}`;
+  const characterIds = Array.from(editingDeckIds);
+  await set(ref(db, `decks/${deviceId}/slots/${editingDeckSlot}`), { name, characterIds, updatedAt: serverTimestamp() });
+  deckState.slots[editingDeckSlot] = { name, characterIds };
+  if (deckState.activeSlot === editingDeckSlot) {
+    myDeckCharacterIds = characterIds.length ? characterIds : CHARACTERS.map(c => c.id);
+  }
+  document.getElementById("deckEditScrim").classList.remove("open");
+  editingDeckSlot = null;
+  renderDeckScreen();
+}
+
+async function selectActiveSlot(slotIndex) {
+  if (!deckState.slots[slotIndex]) { openDeckEditor(slotIndex); return; } // 未作成の枠はまず編集させる
+  deckState.activeSlot = slotIndex;
+  const activeDeck = deckState.slots[slotIndex];
+  myDeckCharacterIds = (activeDeck.characterIds && activeDeck.characterIds.length)
+    ? activeDeck.characterIds : CHARACTERS.map(c => c.id);
+  renderDeckScreen();
+  await update(ref(db, `decks/${deviceId}`), { activeSlot: slotIndex }).catch(() => {});
+}
+
+function showDeckScreen() {
+  document.getElementById("deckScreen").style.display = "flex";
+  document.getElementById("lobbyScreen").style.display = "none";
+  document.getElementById("layoutRoot").style.display = "none";
+  document.getElementById("pageHeader").style.display = "none";
+  renderDeckScreen();
+}
+function hideDeckScreen() {
+  document.getElementById("deckScreen").style.display = "none";
+}
+
+document.getElementById("proceedToLobbyBtn").addEventListener("click", () => {
+  hideDeckScreen();
+  lobbyPhase = "entry";
+  showLobbyScreen("A");
+});
+document.getElementById("closeDeckEditBtn").addEventListener("click", () => {
+  document.getElementById("deckEditScrim").classList.remove("open");
+  editingDeckSlot = null;
+});
+document.getElementById("saveDeckBtn").addEventListener("click", saveDeckSlot);
+document.getElementById("deckEditScrim").addEventListener("click", (e) => {
+  if (e.target.id === "deckEditScrim") { e.currentTarget.classList.remove("open"); editingDeckSlot = null; }
+});
 
 /* ==================== 座標系 ====================
  * 格子の基本表現は「オフセット座標」(col, row)。col=0..19, row=0..18。
@@ -1117,13 +1331,18 @@ const credits = { player1: ROUND1_CREDITS, player2: ROUND1_CREDITS };
 let currentRound = 1; // [P6] 1〜4
 
 // [P6] ラウンドごとのプール体数目標（設計書§7、2026-08-19確定）。R2〜R4は「どのキャラが増えるか」
-// （設計書§10未確定#2）が決まるまでは全8体を見せる暫定運用。確定しているのはR1の「8体中6体を
-// 共有シードでランダム抽選」という仕組みのみ
+// （設計書§10未確定#2）が決まるまでは全キャラを見せる暫定運用。確定しているのはR1の「自分のデッキから
+// 6体を抽選」という仕組みのみ
 const ROUND_POOL_SIZE = { 1: 6, 2: 7, 3: 8, 4: 10 };
 
-function pickRandomPool(seed, count) {
+// [デッキ機能] 1デッキの目標体数。将来キャラが増えても30体中12体、のような意味を持たせるため
+// CHARACTERSの現在数とはあえて連動させず、現在数の方が少ない間だけ実質的に頭打ちになる
+const DECK_SIZE = Math.min(12, CHARACTERS.length);
+const DECK_SLOT_COUNT = 3;
+
+function pickRandomPool(seed, count, idPool = CHARACTERS.map(c => c.id)) {
   const rng = createRng(seed);
-  const ids = CHARACTERS.map(c => c.id);
+  const ids = idPool.slice();
   for (let i = ids.length - 1; i > 0; i--) { // Fisher-Yates（Math.random()直接使用禁止の原則どおり共有シードのrngを使う）
     const j = Math.floor(rng() * (i + 1));
     [ids[i], ids[j]] = [ids[j], ids[i]];
@@ -1131,11 +1350,16 @@ function pickRandomPool(seed, count) {
   return ids.slice(0, count).sort();
 }
 
-// 現在購入可能なキャラID一覧。R1はpickRandomPool()でR1開始時に決定・共有（オンラインはFirebase同期、
-// オフラインはローカルシード）。R2以降は上記の理由で暫定的に全8体
+// 現在購入可能なキャラID一覧。R1はpickRandomPool()でR1開始時に決定（自分のデッキから抽選、
+// デッキ未読込時は暫定で全キャラ）。R2以降は上記の理由で暫定的に全キャラ
 let currentPool = CHARACTERS.map(c => c.id);
-function regenerateRound1Pool(seed) { currentPool = pickRandomPool(seed, ROUND_POOL_SIZE[1]); }
-regenerateRound1Pool(Date.now()); // ページ読み込み時点の初期値（オフラインテスト用。ルーム参加時は共有プールで上書きされる）
+// [デッキ機能] 現在アクティブなデッキの構成キャラID。loadDecks()完了までは全キャラがデフォルト
+let myDeckCharacterIds = CHARACTERS.map(c => c.id);
+function regenerateRound1Pool(seed) {
+  const source = (myDeckCharacterIds && myDeckCharacterIds.length) ? myDeckCharacterIds : CHARACTERS.map(c => c.id);
+  currentPool = pickRandomPool(seed, Math.min(ROUND_POOL_SIZE[1], source.length), source);
+}
+regenerateRound1Pool(Date.now()); // ページ読み込み時点の初期値（デッキ読込前の暫定値。initApp()のloadDecks()後に再抽選される）
 // [P6] 前ラウンドから引き継いだユニットかどうかの判定に使う（再配置制度は2026-09-06にUC判断で撤廃、
 // 引き継ぎユニットは移動・返却とも不可。今ラウンド新規配置ユニットの移動・返却可否の判定にのみ使う）
 let roundStartUnitIds = new Set();
@@ -2308,6 +2532,7 @@ function selectUnitForEdit(unitId) {
 }
 
 function buyCharacter(player, charId) {
+  if (!currentPool.includes(charId)) { showStatus("現在購入できないキャラです。"); return; }
   const char = getCharacter(charId); // 価格・名前は常に基礎値（購入コスト自体は星で変わらない）
   if (credits[player] < char.price) { showStatus("クレジットが足りません。"); return; }
   credits[player] -= char.price;
@@ -3244,6 +3469,19 @@ function saveRoomToLocalStorage(code, role) { sessionStorage.setItem(LS_ROOM_KEY
 function loadSavedRoom() { try { return JSON.parse(sessionStorage.getItem(LS_ROOM_KEY)); } catch { return null; } }
 function clearSavedRoom() { sessionStorage.removeItem(LS_ROOM_KEY); }
 
+// [デッキ機能] 上のafbe_room_v1とは正反対の性質：こちらはlocalStorageで、タブ間・リロードをまたいで
+// 永続する端末固有ID。ログイン機能が無いこのプロジェクトでの擬似アカウントIDとしてデッキ保存に使う
+const LS_DEVICE_KEY = "afbe_device_v1";
+function getOrCreateDeviceId() {
+  let id = localStorage.getItem(LS_DEVICE_KEY);
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(LS_DEVICE_KEY, id);
+  }
+  return id;
+}
+const deviceId = getOrCreateDeviceId();
+
 let roomCode = null;
 let myRole = null; // "player1" | "player2"（ルーム未参加時はnull）
 let roomRef = null;
@@ -3265,6 +3503,7 @@ function myPlacementSnapshot() {
     units: units.filter(u => u.owner === myRole),
     queue: queue[myRole],
     credits: credits[myRole],
+    pool: currentPool, // [デッキ機能] R1の自分専用抽選プール。リロード時に再抽選させず復元するため
   };
 }
 
@@ -3283,6 +3522,7 @@ function restoreMyPlacement(d) {
   for (const u of (d.units || [])) units.push(u);
   queue[myRole] = d.queue || [];
   if (typeof d.credits === "number") credits[myRole] = d.credits;
+  if (d.pool) currentPool = d.pool; // [デッキ機能] 再抽選させず、既に購入していた時点のプールを復元
   unitSeq = Math.max(unitSeq, 0, ...(d.units || []).map(u => seqPartOfUnitId(u.id)));
   queueSeq = Math.max(queueSeq, 0, ...(d.queue || []).map(q => q.qid));
   suppressPush = false;
@@ -3346,7 +3586,6 @@ function handleRoomUpdate(snap) {
 
   const oppOnlineField = myRole === "player1" ? "guestOnline" : "hostOnline";
   opponentOnline = !!data[oppOnlineField];
-  if (data.pool && currentRound === 1) { currentPool = data.pool; render(); } // [P6] R1の共有プールをホスト/ゲスト双方に反映
   const placements = data.placements || {};
   const oppRole = myRole === "player1" ? "player2" : "player1";
   myReady = !!(placements[myRole] && placements[myRole].ready);
@@ -3434,15 +3673,14 @@ async function createRoom() {
   }
   if (!code) { lobbyMsg("ルームコードの発行に失敗しました。もう一度お試しください。"); return; }
 
-  const poolSeed = Date.now();
   await set(ref(db, `rooms/${code}`), {
     status: "waiting",
     createdAt: serverTimestamp(),
     hostOnline: true,
     guestOnline: false,
-    poolSeed, // [P6] R1の共有ランダムプールの元になるシード（両者が同じ6体を見るように）
-    pool: pickRandomPool(poolSeed, ROUND_POOL_SIZE[1]),
   });
+  // [デッキ機能] R1プールは各プレイヤーが自分のデッキから独立に抽選するため共有不要（相手には非公開の情報）
+  regenerateRound1Pool(Date.now());
   enterRoom(code, "player1");
 }
 
@@ -3459,6 +3697,7 @@ async function joinRoom(code) {
     guestOnline: true,
     status: data.status === "waiting" ? "placing" : data.status,
   });
+  regenerateRound1Pool(Date.now()); // [デッキ機能] 自分のデッキから独立に抽選
   enterRoom(code, "player2");
 }
 
@@ -3467,8 +3706,12 @@ document.getElementById("joinRoomBtn").addEventListener("click", () => {
   joinRoom(document.getElementById("joinCodeInput").value.trim());
 });
 document.getElementById("devSkipLobbyBtn").addEventListener("click", () => {
+  // [デッキ機能] createRoom()/joinRoom()を経由しないため、ここで自分のアクティブデッキから
+  // 改めて抽選し直す（デッキ画面で選び直した後にここへ来ても反映されるように）
+  regenerateRound1Pool(Date.now());
   lobbyPhase = "hidden";
   hideLobbyScreen();
+  render();
 });
 document.getElementById("readyBtn").addEventListener("click", () => {
   if (!roomCode) return;
@@ -3510,12 +3753,10 @@ document.getElementById("goHomeBtn").addEventListener("click", () => {
   leaveRoomLocal();
 });
 
-showLobbyScreen("A"); // [UI] 初期表示はロビー入口。復帰処理があれば下のtryAutoRejoinが上書きする
-
-// ページ読み込み時、直前に参加していたルームが残っていれば自動復帰する（[P5] 切断・リロード対策）
-(async function tryAutoRejoin() {
-  const saved = loadSavedRoom();
-  if (!saved || !saved.code || !saved.role) return;
+// ページ読み込み時、直前に参加していたルームが残っていれば自動復帰する（[P5] 切断・リロード対策）。
+// [デッキ機能] 復帰の場合はデッキ画面を経由せずそのまま復帰処理へ入る。新規セッションの場合のみ
+// デッキ画面を表示する（デッキ読み込み完了後にR1プールを自分のデッキから抽選し直す）
+async function tryAutoRejoin(saved) {
   const snap = await get(ref(db, `rooms/${saved.code}`));
   // [バグ修正 2026-08-23] この非同期処理の間にユーザーが手動でルーム作成/参加を終えている可能性がある。
   // その場合は自動復帰で上書きしない（roomCodeが既にセットされていれば手動操作が先に完了した合図）
@@ -3524,10 +3765,25 @@ showLobbyScreen("A"); // [UI] 初期表示はロビー入口。復帰処理が�
   lobbyMsg(`ルーム${saved.code}に復帰しています…`);
   enterRoom(saved.code, saved.role);
   const mySnap = await get(ref(db, `rooms/${saved.code}/placements/${saved.role}`));
-  if (mySnap.exists() && roomCode === saved.code) restoreMyPlacement(mySnap.val());
-})();
+  if (mySnap.exists() && roomCode === saved.code) {
+    restoreMyPlacement(mySnap.val()); // プールも含めて復元。再抽選はしない
+  } else {
+    regenerateRound1Pool(Date.now()); // 一度も購入していない新規参加のケース
+  }
+}
 
-render();
+async function initApp() {
+  await loadDecks();
+  const saved = loadSavedRoom();
+  if (saved && saved.code && saved.role) {
+    await tryAutoRejoin(saved);
+  } else {
+    regenerateRound1Pool(Date.now());
+    showDeckScreen();
+  }
+  render();
+}
+initApp();
 </script>
 </body>
 </html>

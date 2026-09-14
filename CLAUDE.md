@@ -61,14 +61,26 @@
       hostOnline   : bool（onDisconnectで自動false化）
       guestOnline  : bool（onDisconnectで自動false化）
       placements/
-        player1/ { bases:[...], units:[...], queue:[...], credits, ready:bool }
-        player2/ { bases:[...], units:[...], queue:[...], credits, ready:bool }
+        player1/ { bases:[...], units:[...], queue:[...], credits, ready:bool, pool:[...] }
+        player2/ { bases:[...], units:[...], queue:[...], credits, ready:bool, pool:[...] }
     ```
+  - **[2026-09-14] デッキ編成機能を追加**。詳細は下記「デッキ編成」の項と設計書§9-1を参照。R1のプール抽選が「初期プール8体から共有シードで6体」→「自分のアクティブデッキから6体を各自ローカルに抽選」に変更されたため、上記スキーマから`poolSeed`/`pool`（room直下）は廃止し、代わりに各プレイヤーの抽選結果を`placements/{role}/pool`に持たせて再接続時に復元する形にした
   - **秘匿はUI制御のみ**（相手のplacementsを配置フェイズ中はローカル状態に取り込まない・描画しない）。開発者ツールで覗けば技術的には見える制約はUC了承済み（サーバーサイドロジックなしの単一HTMLファイル構成のため）
   - **戦闘結果は同期しない**。両者readyでseed・placementsが揃った時点で各クライアントが`simulateBattle()`をローカルで独立実行し、共有シードにより同一結果になることを担保（P3の設計をそのまま流用、無修正）
   - 自分側の配置状態（`bases[myRole]`/`units.filter(owner===myRole)`/`queue[myRole]`/`credits[myRole]`）は`render()`末尾から`pushMyPlacement()`が400msデバウンスで自動プッシュ。「配置完了」ボタンで`ready:true`を即時反映
   - **切断・リロード復帰**: `localStorage`に`{roomCode, role}`を保存し、ページ読み込み時に`tryAutoRejoin()`が同じ役割で再接続し、Firebase上の自分のplacementsをローカルへ復元する（UC確認済み・同じ合言葉での復帰を想定）
   - ルーム未参加時は既存のデバッグ用P1/P2手動切替UIがそのまま使えるオフラインテストモードとして残置（当初案の「P5導入時に削除」からUC相談なしで方針変更。理由: ローカル単体テストの利便性を優先）
+
+- **デッキ編成**（`index.html`、2026-09-14実装。UC要望「将来的に30体くらいまでキャラを追加して、対戦前にデッキ作成をできるようにしたい」への対応）
+  - ページ読み込み時、ロビー画面より前に`#deckScreen`を表示。3枠まで保存できるデッキから1つをアクティブに選び「対戦へ進む」でロビーへ（`initApp()`が`loadDecks()`→保存済みルームへの復帰 or デッキ画面表示、を振り分け）
+  - `DECK_SIZE = Math.min(12, CHARACTERS.length)`（現状8体のため実質「全部選ぶ」形だが、将来30体になった時に12体まで選べる設計）。`DECK_SLOT_COUNT = 3`
+  - 保存先はFirebase `/decks/{deviceId}/{activeSlot, slots/{0,1,2}/{name,characterIds,updatedAt}}`。ログイン機能が無いため`localStorage`の`afbe_device_v1`キーに`crypto.randomUUID()`を永続化し擬似アカウントIDとして使う（ルーム再接続用の`afbe_room_v1`は`sessionStorage`＝タブ単位・意図的に別物。混同注意）
+  - 初回アクセス時（`decks/{deviceId}`が未存在）は`loadDecks()`が自動でデッキ1（全キャラ）を作成し、デッキ編集を強制しない
+  - **R1プールの仕組みを変更**: 旧方式（ホストが`poolSeed`をFirebaseに書き込み両者が同一の6体を見る）を廃止し、`regenerateRound1Pool(seed)`が`myDeckCharacterIds`（アクティブデッキの構成）から`pickRandomPool()`で6体を各クライアントが独立に抽選する方式に変更。相手の新規購入は元々非公開情報なので同期不要（`pickRandomPool(seed, count, idPool)`は第3引数でid列を受け取れるよう汎用化、省略時は旧来通り全キャラ）
+  - 抽選し直しが必要なタイミング（アクティブデッキが変わりうる箇所すべてで呼ぶ必要がある）: `createRoom()`/`joinRoom()`（enterRoom前）、`devSkipLobbyBtn`クリック時（オンライン経路を通らないため個別に必要）、`resetGameState()`（既存のR1リセットと連動）
+  - **再接続時にプールを再抽選しない**よう`myPlacementSnapshot()`/`restoreMyPlacement()`に`pool`フィールドを追加。`tryAutoRejoin()`は`placements/{role}`が存在すれば`pool`ごと復元し、存在しない（＝一度も購入していない）場合のみ新規抽選する
+  - **ハマったバグ**: `initApp()`内で`loadDecks()`直後に1回だけ`regenerateRound1Pool()`を呼んでいたが、その後ユーザーがデッキ画面でアクティブデッキを切り替えても（`selectActiveSlot()`は`myDeckCharacterIds`は更新するが`currentPool`の再抽選まではしない）、この最初の抽選結果が上書きされずに残ってしまい、オフラインテスト（dev-skip経由）で「切り替えたはずのデッキと違うプールが出る」不具合になった。原因は「アクティブデッキが変わりうる箇所すべてでプールを再抽選する」というルールを`devSkipLobbyBtn`の1箇所だけ入れ忘れていたこと。**教訓: 同種の呼び出しが必要な箇所を洗い出す時は、`createRoom`/`joinRoom`のような「本流」経路だけでなくdevスキップのような迂回経路も見落とさないこと**（`[2026-08-22]`のHP→行動力変換バグと同種の「複数箇所への同じ対応漏れ」パターン）
+  - 実機検証（Chrome拡張、`python -m http.server`経由）: デッキ画面の自動作成・編集（キャラ選択トグル・上限12・名前変更）・保存・アクティブ切替・永続化（リロード後も維持）を確認。2タブでのオンライン対戦で両プレイヤーのR1ショップに出るキャラが独立して異なることを確認（旧: 完全一致→新: 基本的に一致しない）。購入後にリロードしても同じプール・同じ購入内容が復元され再抽選されないことを確認。コンソールエラーなし
 
 - **P7: 4R特殊処理**（`index.html`、2026-08-22実装）
   - **HP→行動力変換**（§6-3）: `convertHpForAp(state, unit, apNeeded, log, tick)`。`state.round4`が真のときのみ有効（`simulateBattle()`に`{round4: currentRound===4}`を渡す）。行動力が必要数に届くまでHP10（端数は残り全部）を消費して+1ずつ変換し続け、HPが0になったら死亡してその行動は不発（UC確認済み: 1行動に必要な分だけ何度でも変換、端数HPも全部使って0→死亡）
