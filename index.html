@@ -1391,7 +1391,7 @@ let queueSeq = 0;
 const queue = { player1: [], player2: [] }; // 購入済み・未配置キャラ [{qid, charId}]
 
 let unitSeq = 0;
-const units = []; // {id, owner, charId, col, row, purpose, targetHex, facing}
+const units = []; // {id, owner, charId, col, row, purpose, waypoints, facing}
 // [バグ修正 2026-08-23] idは"player1_3"のような文字列（owner名前空間付き）。unitSeqの巻き戻り防止のため
 // 既存ユニットのidから連番部分だけを取り出す。旧仕様の素の数値idが万一残っていても壊れないようフォールバックする。
 function seqPartOfUnitId(id) {
@@ -1550,12 +1550,15 @@ function initBattleState(unitsInput, basesInput, options) {
   }
   const units = unitsInput.map(u => {
     const char = getCharacter(u.charId);
+    // [経由点機能] 後方互換: 旧形式targetHex（単一マス）しか無いデータはwaypoints=[targetHex]に変換する
+    const waypoints = u.waypoints ? u.waypoints.map(w => ({ ...w }))
+      : (u.targetHex ? [{ ...u.targetHex }] : null);
     return {
       id: u.id, owner: u.owner, charId: u.charId,
       col: u.col, row: u.row,
       hp: u.hp != null ? u.hp : char.hp, maxHp: char.hp,
       ap: u.ap != null ? u.ap : char.ap + (u.apCarry || 0),
-      purpose: u.purpose, targetHex: u.targetHex ? { ...u.targetHex } : null,
+      purpose: u.purpose, waypoints,
       facing: u.facing != null ? u.facing : null,
       poisoned: !!u.poisoned,
       apSpentTotal: 0, healTriggerCounter: 0, followUsed: 0,
@@ -1673,8 +1676,38 @@ function effectiveAtk(state, unit) {
 
 /* ==================== 目的（AI移動先） ==================== */
 
+// [経由点機能] waypoints[0]が「同一マスまたは隣接」なら消化（配列から除去）する。連続で消化を繰り返す。
+// purpose==="goto"の場合のみ最終要素（最後の1個）は隣接では消化しない（実マス到達のみ、performAction側で判定）。
+// rushの経由点（A-4）には「最終目的地」の概念が無いため、全要素が消化対象になる
+function consumeWaypoints(unit) {
+  const protectLast = unit.purpose === "goto";
+  while (unit.waypoints && unit.waypoints.length > (protectLast ? 1 : 0)) {
+    if (hexDistance({ col: unit.col, row: unit.row }, unit.waypoints[0]) <= 1) {
+      unit.waypoints.shift();
+    } else break;
+  }
+}
+
+// [経由点機能] 残ったwaypointsを先頭から順に見て、経路探索（BFS）で経路が引ける最初の要素を返す。
+// 一時的に塞がれた経由点はそのtickだけ飛ばす（配列からは消さない）。どれも経路が無ければnull（停止）
+function pickReachableWaypoint(state, unit) {
+  for (const wp of unit.waypoints) {
+    const path = findPath({ col: unit.col, row: unit.row }, wp, (c, r) => isBlockedForUnit(state, unit, c, r));
+    // findPath()はstart===goalの場合[]（空配列・truthy）を返す。「既にそこにいる」は"到達可能"の一種なので
+    // path.length>0で弾かない（弾くと、まだ消化されていない別要素がたまたま現在地と一致する稀なケースで
+    // 誤って「到達不能」扱いになり、そのtickだけ止まるはずが延々止まり続けるバグになる）
+    if (path) return wp;
+  }
+  return null;
+}
+
 function computeGoal(state, unit, rng) {
   if (unit.purpose === "rush") {
+    // [経由点機能 A-4] rushに経由点が設定されていれば先にそれを辿り、全消化後は従来のrush（最寄りの敵拠点）に戻る
+    if (unit.waypoints && unit.waypoints.length > 0) {
+      consumeWaypoints(unit);
+      if (unit.waypoints.length > 0) return pickReachableWaypoint(state, unit);
+    }
     const enemyBases = state.bases.filter(b => b.owner !== unit.owner && b.alive);
     return nearestByHexDistance(unit, enemyBases, rng);
   }
@@ -1683,7 +1716,9 @@ function computeGoal(state, unit, rng) {
     return nearestByHexDistance(unit, enemies, rng);
   }
   if (unit.purpose === "goto") {
-    return unit.targetHex ? { col: unit.targetHex.col, row: unit.targetHex.row } : null;
+    if (!unit.waypoints || unit.waypoints.length === 0) return null;
+    consumeWaypoints(unit);
+    return pickReachableWaypoint(state, unit);
   }
   return null;
 }
@@ -1816,7 +1851,8 @@ function triggerFollow(state, mover, moverOldPos, rng, log, tick) {
 function performAction(state, unit, rng, log, tick) {
   // 「指定マスへ」が配置時点/前回の移動で既に目標マスに到達済みなら、
   // 移動処理を待たずにここで即座に「守る」へ切り替える（無駄なtick消費を防ぐ）
-  if (unit.purpose === "goto" && unit.targetHex && unit.col === unit.targetHex.col && unit.row === unit.targetHex.row) {
+  if (unit.purpose === "goto" && unit.waypoints && unit.waypoints.length === 1 &&
+      unit.col === unit.waypoints[0].col && unit.row === unit.waypoints[0].row) {
     unit.purpose = "guard";
     log.push({ tick, type: "purposeChange", unitId: unit.id, purpose: "guard" });
     return;
@@ -1880,7 +1916,8 @@ function performAction(state, unit, rng, log, tick) {
     }
   }
 
-  if (unit.purpose === "goto" && unit.targetHex && dest.col === unit.targetHex.col && dest.row === unit.targetHex.row) {
+  if (unit.purpose === "goto" && unit.waypoints && unit.waypoints.length === 1 &&
+      dest.col === unit.waypoints[0].col && dest.row === unit.waypoints[0].row) {
     unit.purpose = "guard";
     log.push({ tick, type: "purposeChange", unitId: unit.id, purpose: "guard" });
   }
@@ -2211,8 +2248,10 @@ function render() {
     const isSelected = unit.id === selectedUnitId;
     const isOwn = unit.owner === currentPlayer; // [バグ修正 2026-09-06] 「相手の指示が見えてしまっている」対応。位置・HP等は仕様通り見せるが、指示（目的地ライン・指示バッジ）は自分のキャラのみ表示する
 
-    if (isOwn && unit.purpose === "goto" && unit.targetHex) {
-      const t = hexCenter(unit.targetHex.col, unit.targetHex.row);
+    if (isOwn && unit.purpose === "goto" && unit.waypoints && unit.waypoints.length) {
+      // [経由点機能] Block Cで確定線（曲がり角込み）に置き換えるまでの暫定表示。最終目的地への直線のみ
+      const finalWp = unit.waypoints[unit.waypoints.length - 1];
+      const t = hexCenter(finalWp.col, finalWp.row);
       const line = el("line", { x1: x, y1: y, x2: t.x, y2: t.y, stroke: color, "stroke-width": "1", "stroke-dasharray": "3,3", opacity: "0.6" });
       const flag = el("text", { x: t.x, y: t.y + 4, "text-anchor": "middle", fill: color, "font-size": "12", "font-weight": "bold", "pointer-events": "none" });
       flag.textContent = "×";
@@ -2429,8 +2468,9 @@ function renderUnitEditPanel() {
   html += `</div>`;
   // [UI 2026-09-05] UC要望により「目標マスを指定」ボタンを廃止。「指定マスへ向かう」チップを押した
   // 瞬間に即座に目標マス選択モードへ入る（setUnitPurpose参照）。ここには現在の目標だけを表示する
-  if (unit.purpose === "goto" && unit.targetHex) {
-    html += `<span class="hint">目標: col${unit.targetHex.col},row${unit.targetHex.row}（チップを押し直すと選び直せます）</span>`;
+  if (unit.purpose === "goto" && unit.waypoints && unit.waypoints.length) {
+    const finalWp = unit.waypoints[unit.waypoints.length - 1];
+    html += `<span class="hint">目標: col${finalWp.col},row${finalWp.row}（チップを押し直すと選び直せます）</span>`;
   }
   if (needsFacing(char)) {
     html += `<div class="facing-row" id="directionGrid"></div>`;
@@ -2499,7 +2539,7 @@ function handlePlaceUnit(col, row) {
   units.push({
     // [UI 2026-09-05] UC要望によりデフォルトの指示を「守る」→「敵拠点へ最短で向かう」に変更
     id: newUnitId, owner: player, charId: char.id, col, row,
-    purpose: "rush", targetHex: null, facing: needsFacing(char) ? 0 : null,
+    purpose: "rush", waypoints: null, facing: needsFacing(char) ? 0 : null,
   });
   queue[player] = queue[player].filter(q => q.qid !== selectedQueueEntry.qid);
   mode = "idle";
@@ -2514,7 +2554,7 @@ function handleSetTarget(col, row) {
   if (isWall(col, row)) { showStatus("壁マスは目標に指定できません。"); return; }
   const unit = units.find(u => u.id === selectedUnitId);
   if (!unit) { mode = "idle"; render(); return; }
-  unit.targetHex = { col, row };
+  unit.waypoints = [{ col, row }]; // [経由点機能] チップからの単発指定は経由点なし＝要素1個の配列
   mode = "idle";
   showStatus("目標マスを設定しました。");
   render();
@@ -2589,7 +2629,7 @@ function setUnitPurpose(unitId, purpose) {
   const unit = units.find(u => u.id === unitId);
   if (!unit) return;
   unit.purpose = purpose;
-  unit.targetHex = null;
+  unit.waypoints = null;
   if (purpose === "goto") {
     // [UI 2026-09-05] UC要望により「目標マスを指定」ボタンを廃止し、チップを押した瞬間に
     // 即座に目標マス選択モードへ入るようにした（再度押せば選び直しにもなる）
@@ -2652,7 +2692,7 @@ function applyDragPaint(col, row) {
   const target = unitAt(col, row);
   if (!target || target.owner !== dragPaintOwner || target.purpose === dragPaintPurpose) return;
   target.purpose = dragPaintPurpose;
-  target.targetHex = null;
+  target.waypoints = null;
   dragPaintMoved = true;
   dragPaintCount++;
   render();
@@ -3412,12 +3452,13 @@ function advanceToNextRound() {
     if (!u.alive) continue;
     // [UI 2026-09-06] UC要望「目標マスにたどり着き次のラウンドに行ったキャラの指示は、その場を守る
     // ではなく拠点を攻める（rush）に変更してほしい」への対応。「指定マスへ向かう」が目標到達済みだと
-    // 戦闘中にpurposeが自動で"guard"へ切り替わる（targetHexは消さずに残る）仕様を利用し、手動で
-    // 「守る」を選んだ場合（setUnitPurposeが必ずtargetHexをnullにする）と区別する
-    const reachedGoto = u.purpose === "guard" && u.targetHex;
+    // 戦闘中にpurposeが自動で"guard"へ切り替わる（waypointsは消さずに残る）仕様を利用し、手動で
+    // 「守る」を選んだ場合（setUnitPurposeが必ずwaypointsをnullにする）と区別する
+    // [経由点機能] 判定基準をtargetHex参照からwaypoints参照に変更（意味は変わらず、旧goto到達検知のまま）
+    const reachedGoto = u.purpose === "guard" && u.waypoints;
     units.push({
       id: u.id, owner: u.owner, charId: u.charId, col: u.col, row: u.row,
-      purpose: reachedGoto ? "rush" : u.purpose, targetHex: reachedGoto ? null : (u.targetHex ? { ...u.targetHex } : null), facing: u.facing,
+      purpose: reachedGoto ? "rush" : u.purpose, waypoints: reachedGoto ? null : (u.waypoints ? u.waypoints.map(w => ({ ...w })) : null), facing: u.facing,
       hp: u.hp, poisoned: !!u.poisoned, apCarry: u.carryoverAp || 0,
     });
   }
