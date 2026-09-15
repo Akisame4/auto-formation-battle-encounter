@@ -275,13 +275,6 @@
   .inspector-who .meta { font-size: 0.76em; }
   .inspector-who .meta .n { font-weight: 700; }
   .inspector-who .meta .p { color: var(--text-faint); }
-  .purpose-row { display: flex; flex-direction: column; gap: 6px; }
-  .purpose-chip {
-    display: flex; align-items: center; gap: 5px; padding: 7px 11px; border-radius: 8px; border: 1px solid var(--panel-border);
-    background: var(--bg); font-size: 0.76em; color: var(--text-dim); cursor: pointer; white-space: nowrap; font-family: inherit;
-    justify-content: center;
-  }
-  .purpose-chip.active { border-color: var(--accent); color: var(--accent); background: rgba(255,212,121,0.08); }
   .facing-row { display: flex; gap: 4px; flex-wrap: wrap; }
   .facing-row button {
     width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--panel-border); background: var(--bg);
@@ -400,7 +393,7 @@
     flex-shrink: 0;
     border: 1px solid var(--grid-line);
   }
-  .hex-clickable { cursor: pointer; }
+  .hex-clickable { cursor: pointer; touch-action: none; } /* [Block B] タッチドラッグ中のページスクロール抑止 */
   .hex-clickable:hover { stroke: #fff; stroke-width: 1.5; }
   svg text.coord-label {
     fill: var(--text-dim);
@@ -715,17 +708,17 @@
       <h3>配置フェイズ</h3>
       <ul>
         <li>クレジットでキャラを購入し、<b>自陣</b>（自分の拠点の周辺3マス）に配置します。体数の上限はありません（クレジットが許す限り）</li>
-        <li>配置したキャラには4種類の<b>指示（目的）</b>のいずれかを設定します（下記）</li>
+        <li>配置したキャラから<b>ドラッグして線を引く</b>と、離した場所に応じて指示を設定できます（下記）。線を引かずタップするだけなら選択のみで指示は変わりません</li>
         <li>今のラウンドで新しく置いたキャラは、何度でも自由に配置し直せます。前のラウンドから引き継いだキャラは位置を変更できません（指示の変更だけは自由です）</li>
         <li>相手の新規配置・購入は見えません。ただし前ラウンドから引き継いだ相手キャラは、位置やHP・ステータスは見えます（タップで確認可）。指示の中身だけは常に非公開です</li>
       </ul>
 
-      <h3>指示（目的）の4種類</h3>
+      <h3>指示（ドラッグの離した場所で決まる）</h3>
       <ul>
-        <li><b>敵拠点へ最短で向かう</b> — 最短ルートで相手の拠点を目指します</li>
-        <li><b>この場を守る</b> — その場から動きません。攻撃範囲に敵が入れば通常通り攻撃します</li>
-        <li><b>敵キャラを積極的に追う</b> — 常に一番近い敵キャラを追いかけます</li>
-        <li><b>指定マスへ向かう</b> — 指定したマスまで移動し、到着後は「この場を守る」に切り替わります</li>
+        <li><b>空きマスで離す</b> — そのマスまで移動します（<b>指定マスへ向かう</b>）。線が曲がっていれば曲がり角を経由して進みます。到着後は「この場を守る」に切り替わります。<b>敵拠点の近くで離した場合も同じ扱い</b>です — 到着後、拠点が攻撃範囲に入っていれば自動的に攻撃し続けます</li>
+        <li><b>自分自身の上に戻して離す</b> — <b>この場を守る</b>。その場から動きません。攻撃範囲に敵が入れば通常通り攻撃します</li>
+        <li><b>敵キャラの上で離す</b> — <b>敵キャラを積極的に追う</b>。常にそのキャラ（が倒れた後は一番近い敵キャラ）を追いかけます</li>
+        <li><b>自分の別のキャラの上で離す</b> — ドラッグ元のキャラの今の指示を、そのキャラにコピーします</li>
       </ul>
 
       <h3>クレジット</h3>
@@ -1365,14 +1358,10 @@ regenerateRound1Pool(Date.now()); // ページ読み込み時点の初期値（�
 let roundStartUnitIds = new Set();
 let persistentTraps = {}; // [P6] ラウンドを跨いで残存する罠（col,row key -> owner）。設計書§8スキル#6
 
-const PURPOSES = [
-  { id: "rush", label: "敵拠点へ最短で向かう" },
-  { id: "guard", label: "この場を守る" },
-  { id: "chase", label: "敵キャラを積極的に追う" },
-  { id: "goto", label: "指定マスへ向かう" },
-];
+// [Block B] チップUIは廃止しドラッグのみで指示を出す。指示種別自体は読み取り専用表示にのみ使う
+const PURPOSE_LABEL = { guard: "この場を守る", chase: "敵キャラを積極的に追う", goto: "指定マスへ向かう" };
 // [UI] 配置待ちストリップの「配置済み」カードで使う短縮ラベル（2026-08-23）
-const PURPOSE_SHORT = { rush: "突撃", guard: "守備", chase: "追撃", goto: "指定マス" };
+const PURPOSE_SHORT = { guard: "守備", chase: "追撃", goto: "指定マス" };
 
 // axial方向ベクトル(dq,dr)込み。射撃Nの直線判定・押し込み/引き寄せの方向計算で実際に使う
 // ピクセル角度は pointy-top odd-r の座標変換 dx=√3*dq+(√3/2)*dr, dy=1.5*dr から算出
@@ -1403,7 +1392,7 @@ function seqPartOfUnitId(id) {
 
 function unitAt(col, row) { return units.find(u => u.col === col && u.row === row); }
 
-// idle: 通常時（マス上のキャラをクリックで選択） / placeUnit: 配置待ちキャラの設置先待ち / setTarget: 「指定マスへ」の目標マス待ち
+// idle: 通常時（マス上のキャラをクリックで選択、または自分のキャラからドラッグして指示） / placeUnit: 配置待ちキャラの設置先待ち
 // moveUnit: 今ラウンド新規配置ユニットの移動先待ち（回数制限なし）
 let mode = "idle";
 let selectedQueueEntry = null;
@@ -1677,11 +1666,10 @@ function effectiveAtk(state, unit) {
 /* ==================== 目的（AI移動先） ==================== */
 
 // [経由点機能] waypoints[0]が「同一マスまたは隣接」なら消化（配列から除去）する。連続で消化を繰り返す。
-// purpose==="goto"の場合のみ最終要素（最後の1個）は隣接では消化しない（実マス到達のみ、performAction側で判定）。
-// rushの経由点（A-4）には「最終目的地」の概念が無いため、全要素が消化対象になる
+// 最終要素（最後の1個）は隣接では消化しない（実マス到達のみ、performAction側で判定）。
+// この関数はgoto専用（rushは廃止済み。chaseはwaypointsを使わない）
 function consumeWaypoints(unit) {
-  const protectLast = unit.purpose === "goto";
-  while (unit.waypoints && unit.waypoints.length > (protectLast ? 1 : 0)) {
+  while (unit.waypoints && unit.waypoints.length > 1) {
     if (hexDistance({ col: unit.col, row: unit.row }, unit.waypoints[0]) <= 1) {
       unit.waypoints.shift();
     } else break;
@@ -1702,15 +1690,6 @@ function pickReachableWaypoint(state, unit) {
 }
 
 function computeGoal(state, unit, rng) {
-  if (unit.purpose === "rush") {
-    // [経由点機能 A-4] rushに経由点が設定されていれば先にそれを辿り、全消化後は従来のrush（最寄りの敵拠点）に戻る
-    if (unit.waypoints && unit.waypoints.length > 0) {
-      consumeWaypoints(unit);
-      if (unit.waypoints.length > 0) return pickReachableWaypoint(state, unit);
-    }
-    const enemyBases = state.bases.filter(b => b.owner !== unit.owner && b.alive);
-    return nearestByHexDistance(unit, enemyBases, rng);
-  }
   if (unit.purpose === "chase") {
     const enemies = state.units.filter(u => u.alive && u.owner !== unit.owner);
     return nearestByHexDistance(unit, enemies, rng);
@@ -1854,6 +1833,7 @@ function performAction(state, unit, rng, log, tick) {
   if (unit.purpose === "goto" && unit.waypoints && unit.waypoints.length === 1 &&
       unit.col === unit.waypoints[0].col && unit.row === unit.waypoints[0].row) {
     unit.purpose = "guard";
+    unit.waypoints = null; // [rush撤去] 到達後に経由点情報を残しておく必要が無くなったため
     log.push({ tick, type: "purposeChange", unitId: unit.id, purpose: "guard" });
     return;
   }
@@ -1919,6 +1899,7 @@ function performAction(state, unit, rng, log, tick) {
   if (unit.purpose === "goto" && unit.waypoints && unit.waypoints.length === 1 &&
       dest.col === unit.waypoints[0].col && dest.row === unit.waypoints[0].row) {
     unit.purpose = "guard";
+    unit.waypoints = null; // [rush撤去] 到達後に経由点情報を残しておく必要が無くなったため
     log.push({ tick, type: "purposeChange", unitId: unit.id, purpose: "guard" });
   }
 
@@ -2062,12 +2043,11 @@ for (let row = 0; row < ROWS; row++) {
         points: pts, fill: "transparent", stroke: "transparent", "stroke-width": "1.5", class: "hex-clickable",
         "data-col": col, "data-row": row,
       });
-      // [UI 2026-09-06] 一括指令（ドラッグで指示コピー）。mousedownで起点ユニットの指示を記憶し、
-      // ボタンを押したまま他の自分のユニットへドラッグすると同じ指示をコピーする
-      hit.addEventListener("mousedown", () => startDragPaint(col, row));
-      hit.addEventListener("mouseenter", (e) => { if (e.buttons === 1) applyDragPaint(col, row); });
+      // [Block B] ドラッグ指示システム。自分のユニットからのpointerdownで起点を記録する
+      // （移動追跡・終端判定はdocument側のpointermove/pointerup、下記参照）
+      hit.addEventListener("pointerdown", (e) => startUnitDrag(col, row, e));
       hit.addEventListener("click", () => {
-        if (dragPaintMoved) { dragPaintMoved = false; return; } // ドラッグ終端でのクリック誤爆を無視
+        if (unitDragMoved) { unitDragMoved = false; return; } // ドラッグ終端でのクリック誤爆を無視
         onHexClick(col, row);
       });
       gGrid.appendChild(hit);
@@ -2252,7 +2232,7 @@ function render() {
       // [経由点機能] Block Cで確定線（曲がり角込み）に置き換えるまでの暫定表示。最終目的地への直線のみ
       const finalWp = unit.waypoints[unit.waypoints.length - 1];
       const t = hexCenter(finalWp.col, finalWp.row);
-      const line = el("line", { x1: x, y1: y, x2: t.x, y2: t.y, stroke: color, "stroke-width": "1", "stroke-dasharray": "3,3", opacity: "0.6" });
+      const line = el("line", { x1: x, y1: y, x2: t.x, y2: t.y, stroke: color, "stroke-width": "1", "stroke-dasharray": "3,3", opacity: "0.6", "pointer-events": "none" });
       const flag = el("text", { x: t.x, y: t.y + 4, "text-anchor": "middle", fill: color, "font-size": "12", "font-weight": "bold", "pointer-events": "none" });
       flag.textContent = "×";
       gMarkers.append(line, flag);
@@ -2272,7 +2252,7 @@ function render() {
     gMarkers.append(circle, label);
     appendCharMarkerImage(gMarkers, unit.charId, x, y, HEX_SIZE * 0.62, `p-${unit.id}`); // [UI 2026-08-25] / [UI 2026-09-02] r拡大
     if (isOwn) {
-      const purposeMark = { rush: "突", guard: "守", chase: "追", goto: "指" }[unit.purpose];
+      const purposeMark = { guard: "守", chase: "追", goto: "指" }[unit.purpose];
       const badgeR = HEX_SIZE * 0.62 * 0.42;
       const badgeX = x + HEX_SIZE * 0.62 * 0.72, badgeY = y + HEX_SIZE * 0.62 * 0.72;
       const pBadgeBg = el("circle", { cx: badgeX, cy: badgeY, r: badgeR.toFixed(1), fill: "#14161a", stroke: "#ffd479", "stroke-width": "1", "pointer-events": "none" });
@@ -2461,17 +2441,15 @@ function renderUnitEditPanel() {
     `<div class="meta"><div class="n">${char.name}</div>` +
     `<div class="p">${ownerLabel}・col${unit.col},row${unit.row}・HP${curHp}/${char.hp}・攻${char.atk}・行動${apDisplay}</div></div>` +
     `</div>`;
-  html += `<div class="purpose-row" id="purposeGroup">`;
-  for (const p of PURPOSES) {
-    html += `<button type="button" class="purpose-chip${unit.purpose === p.id ? " active" : ""}" data-purpose="${p.id}">${p.label}</button>`;
-  }
-  html += `</div>`;
-  // [UI 2026-09-05] UC要望により「目標マスを指定」ボタンを廃止。「指定マスへ向かう」チップを押した
-  // 瞬間に即座に目標マス選択モードへ入る（setUnitPurpose参照）。ここには現在の目標だけを表示する
+  // [Block B] チップUIは廃止。指示はドラッグのみで出す。ここには現在の指示を読み取り専用で表示する
+  let purposeLine = `現在の指示: ${PURPOSE_LABEL[unit.purpose] || unit.purpose}`;
   if (unit.purpose === "goto" && unit.waypoints && unit.waypoints.length) {
     const finalWp = unit.waypoints[unit.waypoints.length - 1];
-    html += `<span class="hint">目標: col${finalWp.col},row${finalWp.row}（チップを押し直すと選び直せます）</span>`;
+    const viaCount = unit.waypoints.length - 1;
+    purposeLine += `（目標: col${finalWp.col},row${finalWp.row}${viaCount > 0 ? `・経由点${viaCount}個` : ""}）`;
   }
+  html += `<div class="hint">${purposeLine}</div>`;
+  html += `<div class="hint">キャラからドラッグして指示を変更できます。</div>`;
   if (needsFacing(char)) {
     html += `<div class="facing-row" id="directionGrid"></div>`;
   }
@@ -2489,10 +2467,6 @@ function renderUnitEditPanel() {
   html += `<div class="inspector-spacer"></div>`;
   html += `<button id="deselectUnitBtn" class="close-btn">選択解除</button>`;
   content.innerHTML = html;
-
-  content.querySelectorAll(".purpose-chip").forEach(btn => {
-    btn.addEventListener("click", () => setUnitPurpose(unit.id, btn.dataset.purpose));
-  });
 
   const returnUnitBtn = content.querySelector("#returnUnitBtn");
   if (returnUnitBtn) returnUnitBtn.addEventListener("click", () => returnPlacedUnit(unit.id));
@@ -2537,26 +2511,16 @@ function handlePlaceUnit(col, row) {
   // （UC報告・実機再現で特定）。owner文字列を含めることで衝突を構造的に無くす。
   const newUnitId = `${player}_${++unitSeq}`;
   units.push({
-    // [UI 2026-09-05] UC要望によりデフォルトの指示を「守る」→「敵拠点へ最短で向かう」に変更
+    // [Block B/rush撤去] デフォルトは「この場を守る」。指示はキャラからドラッグして出す
     id: newUnitId, owner: player, charId: char.id, col, row,
-    purpose: "rush", waypoints: null, facing: needsFacing(char) ? 0 : null,
+    purpose: "guard", waypoints: null, facing: needsFacing(char) ? 0 : null,
   });
   queue[player] = queue[player].filter(q => q.qid !== selectedQueueEntry.qid);
   mode = "idle";
   selectedQueueEntry = null;
   // [UI 2026-09-06] UC要望「置いたキャラにはすぐ指示が出せるように選択状態に」への対応
   selectedUnitId = newUnitId;
-  showStatus(`${char.name}を配置しました（指示: 敵拠点へ最短で向かう）。必要なら変更してください。`);
-  render();
-}
-
-function handleSetTarget(col, row) {
-  if (isWall(col, row)) { showStatus("壁マスは目標に指定できません。"); return; }
-  const unit = units.find(u => u.id === selectedUnitId);
-  if (!unit) { mode = "idle"; render(); return; }
-  unit.waypoints = [{ col, row }]; // [経由点機能] チップからの単発指定は経由点なし＝要素1個の配列
-  mode = "idle";
-  showStatus("目標マスを設定しました。");
+  showStatus(`${char.name}を配置しました。キャラからドラッグして指示を出してください。`);
   render();
 }
 
@@ -2625,21 +2589,6 @@ function returnPlacedUnit(unitId) {
   render();
 }
 
-function setUnitPurpose(unitId, purpose) {
-  const unit = units.find(u => u.id === unitId);
-  if (!unit) return;
-  unit.purpose = purpose;
-  unit.waypoints = null;
-  if (purpose === "goto") {
-    // [UI 2026-09-05] UC要望により「目標マスを指定」ボタンを廃止し、チップを押した瞬間に
-    // 即座に目標マス選択モードへ入るようにした（再度押せば選び直しにもなる）
-    selectedUnitId = unitId;
-    mode = "setTarget";
-    showStatus("盤面をクリックして目標マスを指定してください。");
-  }
-  render();
-}
-
 // [UI 2026-09-05] UC要望「一度配置をしたら動かせないのがやだ、何度でも配置位置を変えられるように」
 // への対応。今ラウンドで新たに購入・配置したユニット（roundStartUnitIdsに含まれない）専用の、
 // 回数制限なしの移動。前ラウンドからの引き継ぎユニットは対象外（2026-09-06に再配置制度自体を撤廃、
@@ -2671,50 +2620,139 @@ function setUnitFacing(unitId, dirIndex) {
   render();
 }
 
-// [UI 2026-09-06] UC要望「（できるならば）一括指令。マウスドラッグで一体のキャラの指示を他にも同じに」
-// への対応。事前選択は不要: ドラッグの起点になったユニットの「今の指示」を、ドラッグでなぞった
-// 自分の他のユニットにそのままコピーする。「指定マスへ」は目標マスがユニットごとに違うためコピー対象外
-let dragPaintPurpose = null; // ドラッグ中でなければnull
-let dragPaintOwner = null;
-let dragPaintMoved = false; // trueなら「クリックではなくドラッグだった」印。終端hexのclickを1回だけ無視する
-let dragPaintCount = 0;
+// [Block B 2026-09-15] ドラッグ指示UI。「キャラをタップ→パネルのチップを選ぶ」を廃止し、
+// 「キャラからドラッグして線を引く」に一本化した（旧・一括指令ドラッグ dragPaint はこれに統合され廃止）。
+// マウス・タッチ両対応のためPointer Eventsを使う。タッチはpointerdownした要素に暗黙キャプチャされ
+// 他要素のpointerenterが発火しないため、pointermoveのたびdocument.elementFromPoint()で
+// 「今どのヘックスの上か」を解決する方式にした（ボードズームにも自動追従する）
+let unitDragUnitId = null;       // ドラッグ起点ユニットのid（ドラッグ中でなければnull）
+let unitDragPath = [];           // 通過したヘックス列 [{col,row}, ...]（起点セル込み）
+let unitDragStartClientPos = null; // タップ/ドラッグ判定用の開始時画面座標
+let unitDragMoved = false;       // trueなら「クリックではなくドラッグだった」印。終端hexのclickを1回だけ無視する
+const UNIT_DRAG_TAP_THRESHOLD = 8; // px。これ未満の移動はタップ（選択）として扱う
 
-function startDragPaint(col, row) {
+function startUnitDrag(col, row, e) {
   if (battleMode || mode !== "idle") return;
   const unit = unitAt(col, row);
-  if (!unit || unit.owner !== currentPlayer || unit.purpose === "goto") { dragPaintPurpose = null; return; }
-  dragPaintPurpose = unit.purpose;
-  dragPaintOwner = unit.owner;
-  dragPaintCount = 0;
+  if (!unit || unit.owner !== currentPlayer) return;
+  unitDragUnitId = unit.id;
+  unitDragPath = [{ col, row }];
+  unitDragStartClientPos = { x: e.clientX, y: e.clientY };
+  unitDragMoved = false;
 }
-function applyDragPaint(col, row) {
-  if (!dragPaintPurpose) return;
-  const target = unitAt(col, row);
-  if (!target || target.owner !== dragPaintOwner || target.purpose === dragPaintPurpose) return;
-  target.purpose = dragPaintPurpose;
-  target.waypoints = null;
-  dragPaintMoved = true;
-  dragPaintCount++;
-  render();
-}
-document.addEventListener("mouseup", () => {
-  if (dragPaintPurpose && dragPaintCount > 0) {
-    showStatus(`${dragPaintCount}体に指示「${PURPOSES.find(p => p.id === dragPaintPurpose)?.label || dragPaintPurpose}」をコピーしました。`);
+
+// [バグ修正 2026-09-15] elementFromPoint()は最前面の要素しか返さないため、pointer-events:noneの
+// 付け忘れがあるオーバーレイ要素（マーカーの線・バッジ等）に隠れるとヘックスを取りこぼす。
+// elementsFromPoint()で重なっている全要素を見て.hex-clickableを探すことで、個々のオーバーレイ要素の
+// pointer-events設定に依存せず確実にヘックスを解決できるようにした（Block Cで線描画が増える前提の保険）
+function resolveHexAtPoint(clientX, clientY) {
+  const stack = document.elementsFromPoint(clientX, clientY);
+  for (const el of stack) {
+    const hexEl = el.closest ? el.closest(".hex-clickable") : null;
+    if (hexEl) return { col: Number(hexEl.dataset.col), row: Number(hexEl.dataset.row) };
   }
-  dragPaintPurpose = null;
-  dragPaintOwner = null;
-  // [バグ修正 2026-09-06] mouseup直後に同期的にclickイベントが発火する場合があり、そこで
-  // dragPaintMovedを見て「ドラッグ由来のクリックは無視する」判定をしたいので、この場では
+  return null; // 壁マス・盤外
+}
+
+document.addEventListener("pointermove", (e) => {
+  if (!unitDragUnitId) return;
+  if (!unitDragMoved) {
+    const dx = e.clientX - unitDragStartClientPos.x, dy = e.clientY - unitDragStartClientPos.y;
+    if (Math.hypot(dx, dy) < UNIT_DRAG_TAP_THRESHOLD) return; // まだタップ相当。線を引いたとみなさない
+    unitDragMoved = true;
+  }
+  const hex = resolveHexAtPoint(e.clientX, e.clientY);
+  if (!hex) return; // 壁マス・盤外を通過中（記録しない＝「ポインタが飛んだ」のと同じ扱い）
+  const last = unitDragPath[unitDragPath.length - 1];
+  if (last.col === hex.col && last.row === hex.row) return; // 同一ヘックス内の移動は無視
+  unitDragPath.push(hex);
+});
+
+document.addEventListener("pointerup", (e) => {
+  if (!unitDragUnitId) return;
+  const unit = units.find(u => u.id === unitDragUnitId);
+  const wasMoved = unitDragMoved;
+  const path = unitDragPath;
+  unitDragUnitId = null;
+  unitDragPath = [];
+  if (wasMoved && unit) {
+    const release = resolveHexAtPoint(e.clientX, e.clientY);
+    applyDragInstruction(unit, path, release);
+  }
+  // [バグ修正パターン踏襲 2026-09-06] pointerup直後に同期的にclickイベントが発火する場合があり、
+  // そこでunitDragMovedを見て「ドラッグ由来のクリックは無視する」判定をしたいので、この場では
   // まだリセットしない。次のイベントループでリセットすることで、複数の異なるマスにまたがる
   // ドラッグ（＝clickが発火しないケース）でもフラグが残り続けて以後のクリックが全部無視される
-  // 事故を防ぐ（実機で発生・確認済み）
-  setTimeout(() => { dragPaintMoved = false; }, 0);
+  // 事故を防ぐ（旧dragPaintで実機発生・確認済みのバグパターンを踏襲して回避）
+  setTimeout(() => { unitDragMoved = false; }, 0);
 });
+
+document.addEventListener("pointercancel", () => {
+  unitDragUnitId = null;
+  unitDragPath = [];
+  setTimeout(() => { unitDragMoved = false; }, 0);
+});
+
+// [Block B] ドラッグの終点解釈（指示書B-2、2026-09-15訂正版：rush廃止によりB-2の「敵拠点」行は
+// 「空きマス」と同じgoto扱いに統合）
+function applyDragInstruction(unit, path, release) {
+  if (!release) { showStatus("壁マス・盤外では指示を設定できません。"); return; } // 壁マス・盤外→キャンセル
+  const char = getCharacter(unit.charId);
+
+  if (release.col === unit.col && release.row === unit.row) {
+    unit.purpose = "guard";
+    unit.waypoints = null;
+    showStatus(`${char.name}の指示を「この場を守る」に設定しました。`);
+    render();
+    return;
+  }
+
+  const targetUnit = unitAt(release.col, release.row);
+  if (targetUnit && targetUnit.id !== unit.id) {
+    if (targetUnit.owner !== unit.owner) {
+      unit.purpose = "chase";
+      unit.waypoints = null;
+      showStatus(`${char.name}の指示を「敵キャラを積極的に追う」に設定しました。`);
+    } else {
+      targetUnit.purpose = unit.purpose;
+      targetUnit.waypoints = unit.waypoints ? unit.waypoints.map(w => ({ ...w })) : null;
+      showStatus(`${char.name}の指示を${getCharacter(targetUnit.charId).name}にコピーしました。`);
+    }
+    render();
+    return;
+  }
+
+  // 空きマス（拠点マス含む）→ 指定マスへ向かう。曲がり角を経由点として抽出する
+  const bends = extractWaypoints(path);
+  unit.purpose = "goto";
+  unit.waypoints = [...bends, { col: release.col, row: release.row }];
+  const viaMsg = bends.length > 0 ? `（経由点${bends.length}個）` : "";
+  showStatus(`${char.name}に「指定マスへ向かう」を設定しました${viaMsg}。`);
+  render();
+}
+
+// [Block B 指示書B-3] ドラッグが通過したヘックス列から、方向が変わった地点だけを経由点として抽出する。
+// 直線区間の中間ヘックスは捨てる。最終目的地（release）はここでは含めず呼び出し元が別途保持する
+function extractWaypoints(path) {
+  if (path.length <= 1) return [];
+  const bends = [];
+  let prevDir = null;
+  for (let i = 1; i < path.length; i++) {
+    const dir = nearestHexDirection(path[i - 1], path[i]);
+    if (prevDir !== null && dir !== prevDir) bends.push({ ...path[i - 1] });
+    prevDir = dir;
+  }
+  if (bends.length > 10) { // 上限10個。超えたら間隔が均等になるよう間引く
+    const thinned = [];
+    for (let i = 0; i < 10; i++) thinned.push(bends[Math.floor(i * bends.length / 10)]);
+    return thinned;
+  }
+  return bends;
+}
 
 function onHexClick(col, row) {
   if (battleMode) return; // 戦闘再生中は配置フェイズの操作を無効化
   if (mode === "placeUnit") { handlePlaceUnit(col, row); return; }
-  if (mode === "setTarget") { handleSetTarget(col, row); return; }
   if (mode === "moveUnit") { handleMoveUnit(col, row); return; }
   const existingUnit = unitAt(col, row);
   if (existingUnit) { selectUnitForEdit(existingUnit.id); return; }
@@ -3189,7 +3227,7 @@ function restartPlayback() {
   document.getElementById("battleLogFeed").innerHTML = "";
   document.getElementById("battleResultLabel").textContent =
     battleResult.tickCount === 0
-      ? "戦闘イベントが0件でした。配置したキャラの指示が全員「この場を守る」（配置直後のデフォルト）のままだと、誰も自分から動かず0tickで終わります。盤面でキャラを選択し、指示を「敵拠点へ最短」や「敵キャラを追う」に変更してから再度お試しください。"
+      ? "戦闘イベントが0件でした。配置したキャラの指示が全員「この場を守る」（配置直後のデフォルト）のままだと、誰も自分から動かず0tickで終わります。盤面でキャラからドラッグして指示を出してから再度お試しください。"
       : "";
   document.getElementById("roundAdvancePanel").style.display = "none";
   updateTickLabel();
@@ -3450,15 +3488,12 @@ function advanceToNextRound() {
   units.length = 0;
   for (const u of outcome.units) {
     if (!u.alive) continue;
-    // [UI 2026-09-06] UC要望「目標マスにたどり着き次のラウンドに行ったキャラの指示は、その場を守る
-    // ではなく拠点を攻める（rush）に変更してほしい」への対応。「指定マスへ向かう」が目標到達済みだと
-    // 戦闘中にpurposeが自動で"guard"へ切り替わる（waypointsは消さずに残る）仕様を利用し、手動で
-    // 「守る」を選んだ場合（setUnitPurposeが必ずwaypointsをnullにする）と区別する
-    // [経由点機能] 判定基準をtargetHex参照からwaypoints参照に変更（意味は変わらず、旧goto到達検知のまま）
-    const reachedGoto = u.purpose === "guard" && u.waypoints;
+    // [rush撤去] 以前はgoto到達済みユニットを次ラウンドでrushへ自動切り替えしていたが、
+    // rushという仕組み自体を廃止したため単純に素通しするだけでよい（到達済みユニットは
+    // performAction側で既にwaypoints:nullのguardになっているので、ここでの特殊扱いは不要）
     units.push({
       id: u.id, owner: u.owner, charId: u.charId, col: u.col, row: u.row,
-      purpose: reachedGoto ? "rush" : u.purpose, waypoints: reachedGoto ? null : (u.waypoints ? u.waypoints.map(w => ({ ...w })) : null), facing: u.facing,
+      purpose: u.purpose, waypoints: u.waypoints ? u.waypoints.map(w => ({ ...w })) : null, facing: u.facing,
       hp: u.hp, poisoned: !!u.poisoned, apCarry: u.carryoverAp || 0,
     });
   }
