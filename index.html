@@ -254,6 +254,8 @@
   }
   .board-zoom-controls button:hover { color: var(--accent); border-color: var(--accent-dim); }
   .board-zoom-controls .board-zoom-reset { width: auto; padding: 0 8px; font-size: 0.72em; }
+  .board-zoom-controls .board-overview-btn { width: auto; padding: 0 8px; font-size: 0.72em; margin-left: auto; }
+  .board-zoom-controls .board-overview-btn:active { color: var(--accent); border-color: var(--accent); background: rgba(255,212,121,0.12); }
   .board-zoom-label { font-size: 0.72em; color: var(--text-faint); min-width: 3em; text-align: center; font-variant-numeric: tabular-nums; }
 
   /* [UI 2026-09-06] UC要望「指示は盤面の右側のアイドルスペースにボタン置けないかな」への対応。
@@ -815,6 +817,7 @@
           <span class="board-zoom-label">100%</span>
           <button type="button" class="board-zoom-in" title="拡大">＋</button>
           <button type="button" class="board-zoom-reset" title="表示を戻す">リセット</button>
+          <button type="button" id="overviewLinesBtn" class="board-overview-btn" title="押している間、自分の全キャラの指示線を表示">👁 全軍俯瞰</button>
         </div>
         <svg id="board"></svg>
       </div>
@@ -1995,6 +1998,18 @@ document.querySelectorAll(".board-zoom-in").forEach(b => b.addEventListener("cli
 document.querySelectorAll(".board-zoom-out").forEach(b => b.addEventListener("click", () => zoomBoardBy(-BOARD_ZOOM_STEP)));
 document.querySelectorAll(".board-zoom-reset").forEach(b => b.addEventListener("click", () => { boardZoom = 1; applyBoardZoom(); }));
 
+// [Block C-1] 全軍俯瞰: 押している間だけ自分の全ユニットの確定線を表示する
+const overviewLinesBtn = document.getElementById("overviewLinesBtn");
+function setOverviewMode(on) {
+  if (overviewMode === on) return;
+  overviewMode = on;
+  render();
+}
+overviewLinesBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setOverviewMode(true); });
+overviewLinesBtn.addEventListener("pointerup", () => setOverviewMode(false));
+overviewLinesBtn.addEventListener("pointerleave", () => setOverviewMode(false));
+overviewLinesBtn.addEventListener("pointercancel", () => setOverviewMode(false));
+
 const nsSVG = "http://www.w3.org/2000/svg";
 function el(tag, attrs) {
   const e = document.createElementNS(nsSVG, tag);
@@ -2008,11 +2023,12 @@ const gGrid = el("g", { id: "gGrid" });
 const gAttackRange = el("g", { id: "gAttackRange" }); // [UI 2026-08-24] ユニットの攻撃範囲オーバーレイ（配置画面・戦闘画面共通）
 const gTraps = el("g", { id: "gTraps" }); // [UI 2026-09-05] 罠マーク。配置画面・戦闘画面共通（罠は相手からも見える仕様のため）
 const gMarkers = el("g", { id: "gMarkers" });
+const gDragPreview = el("g", { id: "gDragPreview" }); // [Block C] ドラッグ中プレビュー線（C-2）。renderMarkers()の対象外で独立更新する
 const gBattleUnits = el("g", { id: "gBattleUnits", visibility: "hidden" });
 const gBattleFx = el("g", { id: "gBattleFx" });
 const gCoordLabels = el("g", { id: "gCoordLabels" });
 const gAxis = el("g", { id: "gAxis" });
-svg.append(gBase, gTerritory, gGrid, gAttackRange, gTraps, gMarkers, gBattleUnits, gBattleFx, gCoordLabels, gAxis);
+svg.append(gBase, gTerritory, gGrid, gAttackRange, gTraps, gMarkers, gDragPreview, gBattleUnits, gBattleFx, gCoordLabels, gAxis);
 
 const baseFillCells = new Map();   // key -> polygon（壁/空きマス色）
 const territoryCells = new Map();  // key -> polygon（自陣オーバーレイ）
@@ -2185,6 +2201,75 @@ function seedTrapMarkersFromPersistent() {
   }
 }
 
+/* ==================== Block C: 指示線の表示（確定線・ドラッグ中プレビュー共通） ==================== */
+
+// [Block C] ドラッグ中のプレビュー線に、離した地点到達時点の残り行動力を数字で表示するかどうか。
+// 見た目がうるさければUC判断でfalseにする（指示書C-2で「仮採用」と明記されている項目）
+const SHOW_AP_PREVIEW_NUMBER = true;
+const ORDER_LINE_MAX_WIDTH = 5, ORDER_LINE_MIN_WIDTH = 1;
+
+// 起点＋経由点（間引かれた曲がり角のみ）の疎な列を、ヘックス単位の密な列に展開する。
+// hexLineCells()は壁や占有を無視した純粋な幾何補間（射線判定と同じ関数）を使うため、
+// 「指示の写像」であって実際の戦闘経路（BFS結果）と一致している必要はない（指示書C-3）
+function expandChainToHexes(chain) {
+  if (chain.length === 0) return [];
+  const hexes = [chain[0]];
+  for (let i = 1; i < chain.length; i++) {
+    const seg = hexLineCells(chain[i - 1], chain[i]);
+    for (let j = 1; j < seg.length; j++) hexes.push(seg[j]);
+  }
+  return hexes;
+}
+
+// [Block C共通] ヘックス単位に展開済みの列を、行動力に応じて太さ・点線が変化する線分の連なりとして描画する。
+// 太さは起点で最大、1ヘックス進むごとに1段階減り、行動力が尽きる地点からは最細の点線になる
+// （移動ボーナスN持ちはNマスごとに1段階減＝1消費でNマス進めるため）。指示書C-2/C-3で計算式を共通化する指定
+function drawApScaledPolyline(group, chain, unit, char, color, showEndNumber) {
+  const hexes = expandChainToHexes(chain);
+  if (hexes.length < 2) return;
+  const moveBonusSkill = char.skills.find(s => s.startsWith("移動ボーナス"));
+  const moveRange = moveBonusSkill ? parseInt(moveBonusSkill.slice(6), 10) : 1;
+  const totalAp = char.ap + (unit.apCarry || 0);
+  for (let i = 0; i < hexes.length - 1; i++) {
+    const apAtStart = Math.max(0, totalAp - Math.floor(i / moveRange));
+    const a = hexCenter(hexes[i].col, hexes[i].row);
+    const b = hexCenter(hexes[i + 1].col, hexes[i + 1].row);
+    const t = totalAp > 0 ? apAtStart / totalAp : 0;
+    const width = (ORDER_LINE_MIN_WIDTH + (ORDER_LINE_MAX_WIDTH - ORDER_LINE_MIN_WIDTH) * t).toFixed(2);
+    const attrs = {
+      x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: color, "stroke-width": width,
+      "stroke-linecap": "round", opacity: "0.85", "pointer-events": "none",
+    };
+    if (apAtStart <= 0) attrs["stroke-dasharray"] = "4,3"; // 行動力が尽きた区間＝次ラウンド以降の見込み
+    group.appendChild(el("line", attrs));
+  }
+  const finalHex = hexes[hexes.length - 1];
+  const fc = hexCenter(finalHex.col, finalHex.row);
+  const flag = el("text", { x: fc.x, y: fc.y + 4, "text-anchor": "middle", fill: color, "font-size": "12", "font-weight": "bold", "pointer-events": "none" });
+  flag.textContent = "×";
+  group.appendChild(flag);
+  if (showEndNumber && SHOW_AP_PREVIEW_NUMBER) {
+    const remainingAtEnd = Math.max(0, totalAp - Math.floor((hexes.length - 1) / moveRange));
+    const numText = el("text", { x: fc.x, y: fc.y - 10, "text-anchor": "middle", fill: color, "font-size": "10", "font-weight": "bold", "pointer-events": "none" });
+    numText.textContent = String(remainingAtEnd);
+    group.appendChild(numText);
+  }
+}
+
+// [Block C] ドラッグ中プレビュー（C-2）。pointermoveのたびに呼ばれる。render()を経由しない独立更新
+function renderDragPreview() {
+  gDragPreview.innerHTML = "";
+  if (!unitDragUnitId || !unitDragMoved) return;
+  const unit = units.find(u => u.id === unitDragUnitId);
+  if (!unit) return;
+  const char = getCharacter(unit.charId);
+  const color = unit.owner === "player1" ? "var(--p1)" : "var(--p2)";
+  drawApScaledPolyline(gDragPreview, unitDragPath, unit, char, color, true);
+}
+
+// [Block C] 全軍俯瞰ボタンを押している間だけtrueにする（C-1の3層目）
+let overviewMode = false;
+
 function render() {
   // 空きマス色 + 壁は固定なので base 層は初期描画のみで良いが、
   // 自陣オーバーレイ・拠点/キャラマーカーは毎回更新する。
@@ -2228,14 +2313,11 @@ function render() {
     const isSelected = unit.id === selectedUnitId;
     const isOwn = unit.owner === currentPlayer; // [バグ修正 2026-09-06] 「相手の指示が見えてしまっている」対応。位置・HP等は仕様通り見せるが、指示（目的地ライン・指示バッジ）は自分のキャラのみ表示する
 
-    if (isOwn && unit.purpose === "goto" && unit.waypoints && unit.waypoints.length) {
-      // [経由点機能] Block Cで確定線（曲がり角込み）に置き換えるまでの暫定表示。最終目的地への直線のみ
-      const finalWp = unit.waypoints[unit.waypoints.length - 1];
-      const t = hexCenter(finalWp.col, finalWp.row);
-      const line = el("line", { x1: x, y1: y, x2: t.x, y2: t.y, stroke: color, "stroke-width": "1", "stroke-dasharray": "3,3", opacity: "0.6", "pointer-events": "none" });
-      const flag = el("text", { x: t.x, y: t.y + 4, "text-anchor": "middle", fill: color, "font-size": "12", "font-weight": "bold", "pointer-events": "none" });
-      flag.textContent = "×";
-      gMarkers.append(line, flag);
+    // [Block C-1] 通常時は線を出さず指示バッジのみ。選択中の1体だけ、または全軍俯瞰ボタンを押している間だけ
+    // 確定線（経由点の曲がり角込み・行動力に応じた太さ/点線）を表示する。相手の指示は秘匿のためisOwn必須
+    if (isOwn && unit.purpose === "goto" && unit.waypoints && unit.waypoints.length && (isSelected || overviewMode)) {
+      const chain = [{ col: unit.col, row: unit.row }, ...unit.waypoints];
+      drawApScaledPolyline(gMarkers, chain, unit, char, color, false);
     }
 
     const circle = el("circle", {
@@ -2666,6 +2748,7 @@ document.addEventListener("pointermove", (e) => {
   const last = unitDragPath[unitDragPath.length - 1];
   if (last.col === hex.col && last.row === hex.row) return; // 同一ヘックス内の移動は無視
   unitDragPath.push(hex);
+  renderDragPreview(); // [Block C-2] ドラッグ中プレビュー線を通過ヘックスの更新に合わせて再描画
 });
 
 document.addEventListener("pointerup", (e) => {
@@ -2675,6 +2758,7 @@ document.addEventListener("pointerup", (e) => {
   const path = unitDragPath;
   unitDragUnitId = null;
   unitDragPath = [];
+  gDragPreview.innerHTML = ""; // [Block C-2] ドラッグ終了時にプレビュー線を消す（確定線はrender()側で表示）
   if (wasMoved && unit) {
     const release = resolveHexAtPoint(e.clientX, e.clientY);
     applyDragInstruction(unit, path, release);
@@ -2690,6 +2774,7 @@ document.addEventListener("pointerup", (e) => {
 document.addEventListener("pointercancel", () => {
   unitDragUnitId = null;
   unitDragPath = [];
+  gDragPreview.innerHTML = "";
   setTimeout(() => { unitDragMoved = false; }, 0);
 });
 
@@ -2698,6 +2783,8 @@ document.addEventListener("pointercancel", () => {
 function applyDragInstruction(unit, path, release) {
   if (!release) { showStatus("壁マス・盤外では指示を設定できません。"); return; } // 壁マス・盤外→キャンセル
   const char = getCharacter(unit.charId);
+  // [Block C] ドラッグ元のキャラを選択状態にしておく。gotoならその場で確定線が見える（C-1: 選択時のみ表示）
+  selectedUnitId = unit.id;
 
   if (release.col === unit.col && release.row === unit.row) {
     unit.purpose = "guard";
@@ -3248,6 +3335,8 @@ function enterBattleMode() {
 
   battleMode = true;
   gMarkers.setAttribute("visibility", "hidden");
+  gDragPreview.innerHTML = ""; // [Block C] 万一ドラッグ中に戦闘へ入っても残らないように
+  gDragPreview.setAttribute("visibility", "hidden");
   gBattleUnits.setAttribute("visibility", "visible");
   document.getElementById("playbackControls").style.display = "block";
   document.getElementById("boardSlotBattle").appendChild(svg); // [UI] 盤面svgを戦闘画面側のスロットへ移動
@@ -3262,6 +3351,7 @@ function exitBattleMode() {
   gBattleUnits.setAttribute("visibility", "hidden");
   gBattleFx.innerHTML = "";
   gMarkers.setAttribute("visibility", "visible");
+  gDragPreview.setAttribute("visibility", "visible");
   document.getElementById("playbackControls").style.display = "none";
   document.getElementById("boardSlotPlacement").appendChild(svg); // [UI] 盤面svgを配置画面側のスロットへ戻す
   showPlacementScreen();
