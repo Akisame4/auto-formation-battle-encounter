@@ -636,7 +636,10 @@
       <div class="lobby-brand">
         <p class="lobby-mark">AFBE</p>
         <p class="lobby-full">Formation Battle Encounter</p>
-        <button id="rulesBtn" class="lobby-rules-btn">📖 遊び方・ルール説明</button>
+        <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+          <button id="rulesBtn" class="lobby-rules-btn">📖 遊び方・ルール説明</button>
+          <button id="backToDeckBtn" class="lobby-rules-btn">🃏 デッキ編成</button>
+        </div>
       </div>
       <div class="lobby-card">
         <div class="lobby-path">
@@ -1086,6 +1089,11 @@ document.getElementById("proceedToLobbyBtn").addEventListener("click", () => {
   hideDeckScreen();
   lobbyPhase = "entry";
   showLobbyScreen("A");
+});
+// [UC要望 2026-09-16] 「始まりのデッキ編成をいつでもできるようにしてほしい」への対応。
+// 従来は初回セッションでのみ表示していたデッキ画面に、ロビー入口からいつでも戻れるようにする
+document.getElementById("backToDeckBtn").addEventListener("click", () => {
+  showDeckScreen();
 });
 document.getElementById("closeDeckEditBtn").addEventListener("click", () => {
   document.getElementById("deckEditScrim").classList.remove("open");
