@@ -255,7 +255,7 @@
   .board-zoom-controls button:hover { color: var(--accent); border-color: var(--accent-dim); }
   .board-zoom-controls .board-zoom-reset { width: auto; padding: 0 8px; font-size: 0.72em; }
   .board-zoom-controls .board-overview-btn { width: auto; padding: 0 8px; font-size: 0.72em; margin-left: auto; }
-  .board-zoom-controls .board-overview-btn:active { color: var(--accent); border-color: var(--accent); background: rgba(255,212,121,0.12); }
+  .board-zoom-controls .board-overview-btn.on { color: var(--accent); border-color: var(--accent); background: rgba(255,212,121,0.12); }
   .board-zoom-label { font-size: 0.72em; color: var(--text-faint); min-width: 3em; text-align: center; font-variant-numeric: tabular-nums; }
 
   /* [UI 2026-09-06] UC要望「指示は盤面の右側のアイドルスペースにボタン置けないかな」への対応。
@@ -820,7 +820,7 @@
           <span class="board-zoom-label">100%</span>
           <button type="button" class="board-zoom-in" title="拡大">＋</button>
           <button type="button" class="board-zoom-reset" title="表示を戻す">リセット</button>
-          <button type="button" id="overviewLinesBtn" class="board-overview-btn" title="押している間、自分の全キャラの指示線を表示">👁 全軍俯瞰</button>
+          <button type="button" id="overviewLinesBtn" class="board-overview-btn" title="ONにすると、選択していないキャラの指示線も薄く常時表示">👁 全軍俯瞰: OFF</button>
         </div>
         <svg id="board"></svg>
       </div>
@@ -2006,17 +2006,17 @@ document.querySelectorAll(".board-zoom-in").forEach(b => b.addEventListener("cli
 document.querySelectorAll(".board-zoom-out").forEach(b => b.addEventListener("click", () => zoomBoardBy(-BOARD_ZOOM_STEP)));
 document.querySelectorAll(".board-zoom-reset").forEach(b => b.addEventListener("click", () => { boardZoom = 1; applyBoardZoom(); }));
 
-// [Block C-1] 全軍俯瞰: 押している間だけ自分の全ユニットの確定線を表示する
+// [UC要望 2026-09-16] 押している間だけ表示、からON/OFFの切り替えボタンに変更。OFF時は選択中のキャラだけ
+// フル表示（従来通り）、ON時は選択していない自分のキャラの指示線も薄く常時表示する
 const overviewLinesBtn = document.getElementById("overviewLinesBtn");
 function setOverviewMode(on) {
   if (overviewMode === on) return;
   overviewMode = on;
+  overviewLinesBtn.classList.toggle("on", on);
+  overviewLinesBtn.textContent = on ? "👁 全軍俯瞰: ON" : "👁 全軍俯瞰: OFF";
   render();
 }
-overviewLinesBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setOverviewMode(true); });
-overviewLinesBtn.addEventListener("pointerup", () => setOverviewMode(false));
-overviewLinesBtn.addEventListener("pointerleave", () => setOverviewMode(false));
-overviewLinesBtn.addEventListener("pointercancel", () => setOverviewMode(false));
+overviewLinesBtn.addEventListener("click", () => setOverviewMode(!overviewMode));
 
 const nsSVG = "http://www.w3.org/2000/svg";
 function el(tag, attrs) {
@@ -2232,12 +2232,13 @@ function expandChainToHexes(chain) {
 // [Block C共通] ヘックス単位に展開済みの列を、行動力に応じて太さ・点線が変化する線分の連なりとして描画する。
 // 太さは起点で最大、1ヘックス進むごとに1段階減り、行動力が尽きる地点からは最細の点線になる
 // （移動ボーナスN持ちはNマスごとに1段階減＝1消費でNマス進めるため）。指示書C-2/C-3で計算式を共通化する指定
-function drawApScaledPolyline(group, chain, unit, char, color, showEndNumber) {
+function drawApScaledPolyline(group, chain, unit, char, color, showEndNumber, opacityScale = 1) {
   const hexes = expandChainToHexes(chain);
   if (hexes.length < 2) return;
   const moveBonusSkill = char.skills.find(s => s.startsWith("移動ボーナス"));
   const moveRange = moveBonusSkill ? parseInt(moveBonusSkill.slice(6), 10) : 1;
   const totalAp = char.ap + (unit.apCarry || 0);
+  const baseOpacity = 0.85 * opacityScale;
   for (let i = 0; i < hexes.length - 1; i++) {
     const apAtStart = Math.max(0, totalAp - Math.floor(i / moveRange));
     const a = hexCenter(hexes[i].col, hexes[i].row);
@@ -2246,14 +2247,14 @@ function drawApScaledPolyline(group, chain, unit, char, color, showEndNumber) {
     const width = (ORDER_LINE_MIN_WIDTH + (ORDER_LINE_MAX_WIDTH - ORDER_LINE_MIN_WIDTH) * t).toFixed(2);
     const attrs = {
       x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: color, "stroke-width": width,
-      "stroke-linecap": "round", opacity: "0.85", "pointer-events": "none",
+      "stroke-linecap": "round", opacity: baseOpacity.toFixed(2), "pointer-events": "none",
     };
     if (apAtStart <= 0) attrs["stroke-dasharray"] = "4,3"; // 行動力が尽きた区間＝次ラウンド以降の見込み
     group.appendChild(el("line", attrs));
   }
   const finalHex = hexes[hexes.length - 1];
   const fc = hexCenter(finalHex.col, finalHex.row);
-  const flag = el("text", { x: fc.x, y: fc.y + 4, "text-anchor": "middle", fill: color, "font-size": "12", "font-weight": "bold", "pointer-events": "none" });
+  const flag = el("text", { x: fc.x, y: fc.y + 4, "text-anchor": "middle", fill: color, "font-size": "12", "font-weight": "bold", "pointer-events": "none", opacity: opacityScale.toFixed(2) });
   flag.textContent = "×";
   group.appendChild(flag);
   if (showEndNumber && SHOW_AP_PREVIEW_NUMBER) {
@@ -2275,8 +2276,10 @@ function renderDragPreview() {
   drawApScaledPolyline(gDragPreview, unitDragPath, unit, char, color, true);
 }
 
-// [Block C] 全軍俯瞰ボタンを押している間だけtrueにする（C-1の3層目）
+// [UC要望 2026-09-16] 全軍俯瞰ボタンのON/OFF状態（元は押している間だけtrueにする一時表示だったが、
+// トグル式に変更。ON時は選択していない自分のキャラの指示線も薄く常時表示する）
 let overviewMode = false;
+const ORDER_LINE_FAINT_OPACITY = 0.32; // 選択していないキャラの指示線の薄さ（全軍俯瞰ON時）
 
 function render() {
   // 空きマス色 + 壁は固定なので base 層は初期描画のみで良いが、
@@ -2321,11 +2324,13 @@ function render() {
     const isSelected = unit.id === selectedUnitId;
     const isOwn = unit.owner === currentPlayer; // [バグ修正 2026-09-06] 「相手の指示が見えてしまっている」対応。位置・HP等は仕様通り見せるが、指示（目的地ライン・指示バッジ）は自分のキャラのみ表示する
 
-    // [Block C-1] 通常時は線を出さず指示バッジのみ。選択中の1体だけ、または全軍俯瞰ボタンを押している間だけ
-    // 確定線（経由点の曲がり角込み・行動力に応じた太さ/点線）を表示する。相手の指示は秘匿のためisOwn必須
+    // [UC要望 2026-09-16] 選択中の1体はフル表示。全軍俯瞰ONなら、それ以外の自分のキャラの指示線も
+    // 薄く常時表示する（選択を切り替えても前のキャラの線が完全に消えず薄く残る、という要望への対応）。
+    // 全軍俯瞰OFFなら選択中の1体だけ表示（従来通り）。相手の指示は秘匿のためisOwn必須
     if (isOwn && unit.purpose === "goto" && unit.waypoints && unit.waypoints.length && (isSelected || overviewMode)) {
       const chain = [{ col: unit.col, row: unit.row }, ...unit.waypoints];
-      drawApScaledPolyline(gMarkers, chain, unit, char, color, false);
+      const opacityScale = isSelected ? 1 : ORDER_LINE_FAINT_OPACITY;
+      drawApScaledPolyline(gMarkers, chain, unit, char, color, false, opacityScale);
     }
 
     const circle = el("circle", {
