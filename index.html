@@ -1280,22 +1280,22 @@ function computeTerritory(player) {
 // オーガはid・スキル・数値そのままで表示名のみ「バーサーカー」に変更（見た目も熊にUC差し替え済み、UC確認済み）
 const CHARACTERS = [
   { id: "soldier", name: "ソルジャー", price: 50, hp: 100, atk: 20, ap: 15, skills: [] },
-  { id: "guardian", name: "ガーディアン", price: 60, hp: 200, atk: 10, ap: 13, skills: ["押し込み"] },
+  { id: "guardian", name: "ガーディアン", price: 60, hp: 140, atk: 10, ap: 13, skills: ["押し込み"] },
   { id: "lancer", name: "ランサー", price: 65, hp: 90, atk: 20, ap: 16, skills: ["近接連携攻撃"] },
   { id: "archer", name: "アーチャー", price: 60, hp: 60, atk: 25, ap: 12, skills: ["射程ボーナス2", "攻撃消費1"] },
   { id: "sniper", name: "スナイパー", price: 70, hp: 50, atk: 40, ap: 10, skills: ["射撃8", "攻撃消費2"] },
-  { id: "trapper", name: "トラッパー", price: 55, hp: 70, atk: 10, ap: 6, skills: ["罠設置"] },
+  { id: "trapper", name: "トラッパー", price: 55, hp: 70, atk: 10, ap: 8, skills: ["罠設置"] },
   { id: "cleric", name: "クレリック", price: 70, hp: 80, atk: 10, ap: 15, skills: ["全体回復20", "射程ボーナス1"] },
   { id: "ogre", name: "バーサーカー", price: 90, hp: 100, atk: 15, ap: 14, skills: ["拠点破壊"] },
   { id: "poisoner", name: "毒使い", price: 55, hp: 90, atk: 10, ap: 10, skills: ["毒"] },
   { id: "gatekeeper", name: "門番", price: 65, hp: 150, atk: 15, ap: 13, skills: ["縄張り"] },
   { id: "ashigaru", name: "足軽", price: 30, hp: 50, atk: 10, ap: 14, skills: [] },
   { id: "medic", name: "衛生兵", price: 75, hp: 150, atk: 5, ap: 10, skills: ["単体回復20"] },
-  { id: "lonewolf", name: "孤高", price: 65, hp: 130, atk: 20, ap: 15, skills: ["孤高"] },
+  { id: "lonewolf", name: "孤高", price: 150, hp: 130, atk: 20, ap: 15, skills: ["孤高"] },
   { id: "hunter", name: "狩人", price: 75, hp: 90, atk: 25, ap: 14, skills: ["移動ボーナス1", "血の匂い"] },
   { id: "bard", name: "吟遊詩人", price: 80, hp: 70, atk: 5, ap: 15, skills: ["行進曲", "射程ボーナス1"] },
   { id: "scout", name: "スカウト", price: 60, hp: 120, atk: 20, ap: 10, skills: ["遠距離連携攻撃", "射程ボーナス1"] },
-  { id: "king", name: "王者", price: 200, hp: 150, atk: 25, ap: 20, skills: ["無双"] },
+  { id: "king", name: "王者", price: 200, hp: 250, atk: 25, ap: 20, skills: ["無双"] },
 ];
 
 function getBaseCharacter(charId) { return CHARACTERS.find(c => c.id === charId); }
