@@ -2007,7 +2007,18 @@ function performAction(state, unit, rng, log, tick) {
 
   const moveBonusSkill = char.skills.find(s => s.startsWith("移動ボーナス"));
   const moveRange = moveBonusSkill ? parseInt(moveBonusSkill.slice(6), 10) : 1;
-  const steps = Math.min(moveRange, path.length);
+  let steps = Math.min(moveRange, path.length);
+  // [バグ修正 2026-09-19] findPath()は目的地セル自体だけは「塞がっていても辿り着ける」扱いにして
+  // 経路探索する（chaseで遠方の敵キャラの座標そのものを目的地にした時にBFSが機能するために必要な
+  // 仕様。経路中の他のマスは通常通り占有チェック済みなので、ここで塞がりうるのは常に経路の最終マス
+  // ＝目的地のみ）。そのため実際に踏み出す直前に目的地の占有だけは改めてチェックする必要がある。
+  // これが無いと「指定マスへ」の目的地に味方や敵が既に立っている場合、そこへ重なって移動してしまう
+  // （UC報告: 吟遊詩人とランサーが同じマスに重なった）
+  if (steps > 0 && isOccupied(state, path[steps - 1].col, path[steps - 1].row, unit.id)) steps -= 1;
+  if (steps === 0) {
+    log.push({ tick, type: "stay", unitId: unit.id });
+    return;
+  }
   const dest = path[steps - 1];
   const traversed = path.slice(0, steps);
 
