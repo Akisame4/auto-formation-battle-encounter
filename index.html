@@ -302,6 +302,12 @@
     font-size: 0.78em; cursor: pointer; font-family: inherit; white-space: nowrap;
   }
   .close-btn:hover { color: var(--text); }
+  /* [UI 2026-09-19] 配置完了のキャンセルボタン。close-btnと見た目は揃えつつ、topbar内でインライン表示させる */
+  .ready-cancel-btn {
+    display: inline-block; width: auto; background: none; border: 1px solid #555c6d; color: var(--text-dim);
+    border-radius: 6px; padding: 6px 12px; font-size: 0.78em; cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  .ready-cancel-btn:hover { color: var(--text); }
 
   .placement-actionbar {
     display: flex; align-items: center; justify-content: flex-end; gap: 14px;
@@ -818,6 +824,7 @@
       <span id="statusMsg" class="placement-status-msg"></span>
       <span id="readyRow" style="display:none;">
         <button id="readyBtn" class="btn-primary-lg">配置完了（準備OK）</button>
+        <button id="cancelReadyBtn" class="ready-cancel-btn" style="display:none;">キャンセル</button>
         <span id="readyStatusLabel" class="status-line"></span>
       </span>
       <button id="rushAllBtn" type="button" class="rush-cta-topbar" title="配置済みの自分の全キャラの指示を「相手拠点へ突撃」に一括変更します">🚩 全軍突撃</button>
@@ -2543,19 +2550,20 @@ function render() {
   pushMyPlacement(); // [P5] ルーム参加中のみ、自分側の配置状態をFirebaseへ反映（未参加時・戦闘中は何もしない）
 }
 
-// [UI] 拠点合計HPバー（2026-08-23）。拠点は各プレイヤー常に最大2個・1個300HP（設計書§2）が前提。
-// 陥落した拠点はbases配列から取り除かれる実装なので、生存分のhp合計をそのまま「最大に対する割合」として描画すれば、
-// 陥落による目減りも自然に表現できる
+// [UI] 拠点HPバー。拠点は各プレイヤー常に最大2個・1個300HP（設計書§2）が前提。
+// [UI 2026-09-19] UC要望「上の拠点HP表示を2つに分けよう(300,300で)」に対応。従来は2個の拠点HPを
+// 合算して1本（600/600）で表示していたが、拠点ごとに別々のバーで表示するように変更した
 function renderBaseHp() {
-  const totals = player => bases[player].reduce((s, b) => s + (b.hp != null ? b.hp : 300), 0);
   const group = document.getElementById("baseHpGroup");
   group.innerHTML = ["player1", "player2"].map(p => {
-    const cur = totals(p);
-    const max = 600;
-    const pct = Math.max(0, Math.min(100, (cur / max) * 100));
     const tag = p === "player1" ? "p1" : "p2";
     const label = p === "player1" ? "P1" : "P2";
-    return `<div class="base-hp ${tag}"><span class="label">${label}</span><span class="bar"><i style="width:${pct}%"></i></span><span class="n">${cur}/${max}</span></div>`;
+    return bases[p].map((b, i) => {
+      const cur = b.hp != null ? b.hp : 300;
+      const max = 300;
+      const pct = Math.max(0, Math.min(100, (cur / max) * 100));
+      return `<div class="base-hp ${tag}"><span class="label">${label}-${i + 1}</span><span class="bar"><i style="width:${pct}%"></i></span><span class="n">${cur}/${max}</span></div>`;
+    }).join("");
   }).join("");
 }
 
@@ -3887,6 +3895,9 @@ function updateLobbyStatusUI() {
     myReady ? "配置完了。相手の準備を待っています…" :
     opponentReady ? "相手は配置完了。あなたの配置をどうぞ。" : "";
   document.getElementById("readyBtn").disabled = myReady;
+  // [UI 2026-09-19] UC要望「配置完了キャンセルも追加しよう」。配置完了後、まだ開戦していなければ
+  // （＝両者readyになってstatus:"battle"に切り替わるまでの間なら）取り消して配置をやり直せるようにする
+  document.getElementById("cancelReadyBtn").style.display = myReady ? "" : "none";
 }
 
 // [UI] ロビー画面（入口）の状態切り替え。state: "A"未参加 / "B"自分だけ参加 / "C"マッチ成立演出
@@ -4065,6 +4076,14 @@ document.getElementById("readyBtn").addEventListener("click", () => {
   if (!roomCode) return;
   clearTimeout(placementPushTimer);
   update(ref(db, `rooms/${roomCode}/placements/${myRole}`), { ...myPlacementSnapshot(), ready: true })
+    .catch(err => lobbyMsg(`同期に失敗しました: ${err.message}`));
+});
+// [UI 2026-09-19] UC要望「配置完了キャンセルも追加しよう」。readyをfalseに戻すだけ。
+// 既に相手も準備完了で開戦条件が揃っていた場合は一瞬差で開戦してしまう可能性はあるが、
+// それ自体はホスト側の「両者ready検出」処理と同じ非同期の競合なので許容する
+document.getElementById("cancelReadyBtn").addEventListener("click", () => {
+  if (!roomCode) return;
+  update(ref(db, `rooms/${roomCode}`), { [`placements/${myRole}/ready`]: false })
     .catch(err => lobbyMsg(`同期に失敗しました: ${err.message}`));
 });
 document.getElementById("leaveRoomBtn").addEventListener("click", () => {
