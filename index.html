@@ -1062,7 +1062,9 @@ function renderDeckEditGrid() {
     const card = document.createElement("div");
     card.className = "hcard deck-pick" + (selected ? " selected" : "");
     card.innerHTML =
-      `<div class="h-banner">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
+      // [バグ修正 2026-09-19] UC報告「デッキ選択画面で購入金額が分からない」。ショップカードと同じ
+      // .h-priceバッジをバナーに追加（値段自体は元々char.priceに保持済みで、表示していなかっただけ）
+      `<div class="h-banner">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}<span class="h-price">${char.price}cr</span></div>` +
       `<div class="h-body"><div class="h-name">${char.name}</div>` +
       statBarsHtml(char) +
       `<div class="skill-pills">${skillPillsHtml(char.skills)}</div></div>`;
