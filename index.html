@@ -1296,7 +1296,11 @@ function setMap(mapId) {
   if (label) label.textContent = `🗺 ${MAPS[mapId].name}`;
 }
 
-function isWall(col, row) { return walls.has(key(col, row)); }
+// [2026-09-19] スキル「建設」用の一時壁。key -> 残りtick数。マップの固定壁(walls)とは別に持ち、
+// 5tick経過で自然に消える。ラウンドをまたいでも（新しいsimulateBattle()呼び出しをまたいでも）
+// この変数自体はリセットされないので、tickカウントがそのまま引き継がれる（UC確認済みの仕様）
+let tempWalls = new Map();
+function isWall(col, row) { return walls.has(key(col, row)) || tempWalls.has(key(col, row)); }
 function inBounds(col, row) { return col >= 0 && col < COLS && row >= 0 && row < ROWS; }
 
 /* ==================== 状態 ==================== */
@@ -1360,6 +1364,14 @@ const CHARACTERS = [
   { id: "bard", name: "吟遊詩人", price: 80, hp: 70, atk: 5, ap: 15, skills: ["行進曲", "射程ボーナス1"] },
   { id: "scout", name: "スカウト", price: 60, hp: 120, atk: 20, ap: 10, skills: ["遠距離連携攻撃", "射程ボーナス1"] },
   { id: "king", name: "王者", price: 200, hp: 250, atk: 25, ap: 20, skills: ["無双"] },
+  // [2026-09-19] AFBElist.xlsx更新（UC追記）に基づき6体追加。追従N・移動ボーナスNの具体的な数値は
+  // シートに未記載だったためUC確認済み（柴犬=追従2、フェンサー=移動ボーナス1）
+  { id: "tank", name: "タンク", price: 100, hp: 300, atk: 10, ap: 8, skills: [] },
+  { id: "ninja", name: "忍者", price: 75, hp: 80, atk: 25, ap: 15, skills: ["変化"] },
+  { id: "samurai", name: "侍", price: 70, hp: 100, atk: 20, ap: 14, skills: ["追従2"] },
+  { id: "parrotbard", name: "バード", price: 80, hp: 70, atk: 15, ap: 12, skills: ["身軽", "行進曲"] },
+  { id: "crafter", name: "クラフター", price: 60, hp: 80, atk: 5, ap: 8, skills: ["建設"] },
+  { id: "fencer", name: "フェンサー", price: 80, hp: 70, atk: 25, ap: 16, skills: ["早業", "移動ボーナス1"] },
 ];
 
 function getBaseCharacter(charId) { return CHARACTERS.find(c => c.id === charId); }
@@ -1374,22 +1386,29 @@ const CHAR_ICON = {
   sniper: "狙", trapper: "罠", cleric: "杖", ogre: "重",
   poisoner: "毒", gatekeeper: "門", ashigaru: "足", medic: "衛",
   lonewolf: "孤", hunter: "狩", bard: "詩", scout: "偵", king: "王",
+  tank: "壁", ninja: "忍", samurai: "侍", parrotbard: "歌", crafter: "工", fencer: "剣",
 };
 // [2026-09-17] trapper/ogreはUCが用意した実ファイル名がcharIdと一致しない（動物モチーフへの
 // 差し替え）ため個別に上書き。trapperは全身・顔とも同じspider_trapper.png（顔専用クロップ無し）。
 // [2026-09-19] 追加9体も同様にファイル名がcharIdと一致しないため全員分オーバーライドが必要。
+// [2026-09-19] さらに6体追加（AFBElist.xlsx更新分）。parrotbardのidは既存の"bard"（吟遊詩人）と
+// 衝突するため別id、画像ファイルは元々parrot_bard.pngで用意されていたものをそのまま使う。
 const CHAR_IMAGE_FILE_OVERRIDE = {
   trapper: "spider_trapper.png", ogre: "bear_ogre_1.png",
   poisoner: "snake_poisoner.png", gatekeeper: "doberman_gatekeeper.png",
   ashigaru: "squirrel_ashigaru.png", medic: "cow_medic.png",
   lonewolf: "wolf_lone.png", hunter: "tiger_hunter.png",
   bard: "fennec_bard.png", scout: "porcupine_scout_2.png", king: "lion_champion.png",
+  tank: "elephant_tank.png", ninja: "tanuki_ninja.png", samurai: "shiba_samurai.png",
+  parrotbard: "parrot_bard.png", crafter: "beaver_crafter.png", fencer: "leopard_fencer.png",
 };
 const CHAR_FACE_FILE_OVERRIDE = {
   trapper: "spider_trapper.png", poisoner: "snake_poisoner.png",
   gatekeeper: "doberman_gatekeeper.png", ashigaru: "squirrel_ashigaru.png",
   medic: "cow_medic.png", lonewolf: "wolf_lone.png", hunter: "tiger_hunter.png",
   bard: "fennec_bard.png", scout: "porcupine_scout_1.png", king: "lion_champion.png",
+  tank: "elephant_tank.png", ninja: "tanuki_ninja.png", samurai: "shiba_samurai.png",
+  parrotbard: "parrot_bard.png", crafter: "beaver_crafter.png", fencer: "leopard_fencer.png",
 };
 function charImageSrc(charId) {
   const file = CHAR_IMAGE_FILE_OVERRIDE[charId] || `${charId}.png`;
@@ -1451,6 +1470,9 @@ const SKILL_DESCRIPTIONS = {
   "孤高": "自分の3マス以内に味方がいない時、攻撃力+20",
   "行進曲": "このキャラ自身が行動力を3消費するたび、攻撃範囲内の味方（自分を除く）の行動力+1（1ラウンドにつき5回まで）",
   "血の匂い": "指示は聞かず、常に最も近い相手キャラに最短で近づく",
+  "変化": "配置した瞬間、自分が購入済みの他キャラ1体をランダムで選び、以後そのキャラになりすます（敵からは名前・画像・ステータス・スキルまで全て偽装先のものに見える）。攻撃を受けた瞬間に正体が判明する",
+  "建設": "通ったマスに壁を設置する（設置から5tick経過で消滅。ラウンドをまたいでもtick経過はカウントされ続ける）",
+  "早業": "「敵を追う」「指定マスへ」など「この場を守る」以外の目的の時、tick内の行動順が最も早くなる（「この場を守る」を選んでいる間は通常通り最後）",
 };
 function skillDescription(skillStr) {
   const m = skillStr.match(/^(.*?)(\d+)$/);
@@ -1713,6 +1735,7 @@ function initBattleState(unitsInput, basesInput, options) {
       purpose: u.purpose, waypoints,
       facing: u.facing != null ? u.facing : null,
       poisoned: !!u.poisoned,
+      disguiseAs: u.disguiseAs || null, revealed: !!u.revealed, // [2026-09-19] 変化
       apSpentTotal: 0, healTriggerCounter: 0, followUsed: 0,
       marchTriggerCounter: 0, marchUsedCount: 0,
       isBase: false, alive: true,
@@ -1890,6 +1913,11 @@ function applyDamage(state, target, dmg, log, tick, attacker) {
   const actualDmg = Math.min(dmg, target.hp);
   target.hp -= actualDmg;
   log.push({ tick, type: "damage", attackerId: attacker.id, targetId: target.id, targetIsBase: target.isBase, amount: actualDmg, targetHpAfter: target.hp });
+  // [2026-09-19] 変化: 攻撃を受けた瞬間に正体が判明する
+  if (!target.isBase && target.disguiseAs && !target.revealed) {
+    target.revealed = true;
+    log.push({ tick, type: "reveal", unitId: target.id });
+  }
   if (target.hp <= 0) {
     target.alive = false;
     log.push({ tick, type: target.isBase ? "baseDestroyed" : "death", unitId: target.id });
@@ -2129,6 +2157,14 @@ function performAction(state, unit, rng, log, tick) {
       log.push({ tick, type: "trapSet", unitId: unit.id, col: cell.col, row: cell.row, owner: unit.owner });
     }
   }
+  // [2026-09-19] 建設: 通ったマスに5tick持続する壁を設置する（UC確認済み: ラウンドをまたいでも
+  // tickカウントは引き継がれる＝tempWallsはラウンド間でリセットしない一時壁専用の変数を使う）
+  if (char.skills.includes("建設")) {
+    for (const cell of traversed) {
+      tempWalls.set(key(cell.col, cell.row), 5);
+      log.push({ tick, type: "wallBuilt", unitId: unit.id, col: cell.col, row: cell.row, owner: unit.owner });
+    }
+  }
 
   if (unit.purpose === "goto" && unit.waypoints && unit.waypoints.length === 1 &&
       dest.col === unit.waypoints[0].col && dest.row === unit.waypoints[0].row) {
@@ -2174,11 +2210,20 @@ function simulateBattle(unitsInput, basesInput, seed, options) {
     // [§5-4 2026-09-05仕様変更] 「この場を守る」は範囲内の敵を通常攻撃するが、そのtick内では
     // 他の目的のキャラより行動順位が低い。「守る以外（ランダム順）」→「守る（この中もランダム順）」の
     // 2段階でシャッフルすることで実現する（守る同士の中の順番は引き続きランダム）
-    const normalIds = state.units.filter(u => canAct(u) && u.purpose !== "guard").map(u => u.id);
+    // [2026-09-19] 早業: 「守る」以外の目的なら最優先で動く3段階目を追加（UC確認済み:
+    // 早業持ちでも「守る」を選んでいる間は従来通り最後のまま）
+    const isEarly = u => getCharacter(u.charId).skills.includes("早業");
+    const earlyIds = state.units.filter(u => canAct(u) && u.purpose !== "guard" && isEarly(u)).map(u => u.id);
+    const normalIds = state.units.filter(u => canAct(u) && u.purpose !== "guard" && !isEarly(u)).map(u => u.id);
     const guardIds = state.units.filter(u => canAct(u) && u.purpose === "guard").map(u => u.id);
-    if (normalIds.length === 0 && guardIds.length === 0) break; // 全員行動力0（§5-1前段）
+    if (earlyIds.length === 0 && normalIds.length === 0 && guardIds.length === 0) break; // 全員行動力0（§5-1前段）
     tick++;
-    const order = [...rngShuffle(rng, normalIds), ...rngShuffle(rng, guardIds)];
+    // [2026-09-19] 建設の一時壁を毎tick1減らし、0になったら消す（誰も行動できるユニットがいなくても
+    // 経過はカウントする。手詰まり終了直前のtickでも壁の寿命は進む）
+    for (const [k, remain] of tempWalls) {
+      if (remain <= 1) tempWalls.delete(k); else tempWalls.set(k, remain - 1);
+    }
+    const order = [...rngShuffle(rng, earlyIds), ...rngShuffle(rng, normalIds), ...rngShuffle(rng, guardIds)];
     let tickHadRealAction = false;
     for (const id of order) {
       const unit = state.units.find(u => u.id === id);
@@ -2645,6 +2690,9 @@ function render() {
     const dark = unit.owner === "player1" ? "var(--p1-dark)" : "var(--p2-dark)";
     const isSelected = unit.id === selectedUnitId;
     const isOwn = unit.owner === currentPlayer; // [バグ修正 2026-09-06] 「相手の指示が見えてしまっている」対応。位置・HP等は仕様通り見せるが、指示（目的地ライン・指示バッジ）は自分のキャラのみ表示する
+    // [2026-09-19] 変化: 相手からは配置時にランダムで選ばれたdisguiseAsのキャラに見える
+    // （攻撃を受けてunit.revealedがtrueになるまで）。名前・画像・HPバーの満タン基準に反映する
+    const displayChar = (!isOwn && unit.disguiseAs && !unit.revealed) ? getCharacter(unit.disguiseAs) : char;
 
     // [UC要望 2026-09-16] 選択中の1体はフル表示。全軍俯瞰ONなら、それ以外の自分のキャラの指示線も
     // 薄く常時表示する（選択を切り替えても前のキャラの線が完全に消えず薄く残る、という要望への対応）。
@@ -2661,13 +2709,13 @@ function render() {
       "pointer-events": "none", // [UI 2026-09-06] 同上。ユニットマーカーもクリックを奪わないようにする
     });
     const label = el("text", { x, y: y + 3, "text-anchor": "middle", fill: "#fff", "font-size": "8", "font-weight": "bold", "pointer-events": "none" });
-    label.textContent = char.name.slice(0, 2);
+    label.textContent = displayChar.name.slice(0, 2);
     // [UI 2026-09-06] UC指摘「指示マークがHPバーとかぶって見づらい」への対応。
     // 元々どちらもマーカー上部に置いていたため衝突していた。下に逃がす案も検討したが、縦に隣接配置
     // すると今度は下のキャラの顔と衝突するため、マーカー右下の角に小さいバッジとして固定表示する
     // 方式にした（毒状態アイコン等、他所で使っている「角に小さい印を置く」パターンを踏襲）
     gMarkers.append(circle, label);
-    appendCharMarkerImage(gMarkers, unit.charId, x, y, HEX_SIZE * 0.62, `p-${unit.id}`); // [UI 2026-08-25] / [UI 2026-09-02] r拡大
+    appendCharMarkerImage(gMarkers, displayChar.id, x, y, HEX_SIZE * 0.62, `p-${unit.id}`); // [UI 2026-08-25] / [UI 2026-09-02] r拡大
     if (isOwn) {
       const purposeMark = { guard: "守", chase: "追", goto: "指", rush: "突" }[unit.purpose];
       const badgeR = HEX_SIZE * 0.62 * 0.42;
@@ -2677,7 +2725,7 @@ function render() {
       pText.textContent = purposeMark;
       gMarkers.append(pBadgeBg, pText);
     }
-    appendMarkerHpBar(x, y, unit.hp != null ? unit.hp : char.hp, char.hp); // [UI 2026-09-06] 前ラウンドで削れたHPを配置画面でも見えるように
+    appendMarkerHpBar(x, y, unit.hp != null ? unit.hp : char.hp, displayChar.hp); // [UI 2026-09-06] 前ラウンドで削れたHPを配置画面でも見えるように
 
     if (isOwn && unit.facing !== null && unit.facing !== undefined) {
       if (isSelected && needsFacing(char)) {
@@ -2848,13 +2896,17 @@ function renderUnitEditPanel() {
   // [UI 2026-09-06] UC要望「タップすると敵のキャラのステータスや残りHPが分かるようにする」への対応。
   // 相手のキャラは閲覧専用（ステータス・残りHP・スキルは見えるが、指示は秘匿ルールにより非表示）
   if (unit.owner !== currentPlayer) {
+    // [2026-09-19] 変化: 未発覚のうちは相手にはdisguiseAsのキャラとして見える（名前・画像・HP最大値・
+    // 攻撃力・行動力・スキル全てを偽装先のもので表示する。攻撃を受けてrevealedがtrueになると解除）
+    const dChar = (unit.disguiseAs && !unit.revealed) ? getCharacter(unit.disguiseAs) : char;
+    const dApDisplay = unit.apCarry ? `${dChar.ap}+${unit.apCarry}` : `${dChar.ap}`;
     let html = `<div class="inspector-who">` +
-      `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
-      `<div class="meta"><div class="n">${char.name}</div>` +
+      `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[dChar.id] || ""}${charImageTag(dChar.id)}</div>` +
+      `<div class="meta"><div class="n">${dChar.name}</div>` +
       `<div class="p">${ownerLabel}（相手）・col${unit.col},row${unit.row}</div></div>` +
       `</div>`;
-    html += `<div class="hint">残りHP ${curHp}/${char.hp}　攻${char.atk}　行動力${apDisplay}</div>`;
-    html += `<div class="skill-pills">${skillPillsHtml(char.skills)}</div>`;
+    html += `<div class="hint">残りHP ${curHp}/${dChar.hp}　攻${dChar.atk}　行動力${dApDisplay}</div>`;
+    html += `<div class="skill-pills">${skillPillsHtml(dChar.skills)}</div>`;
     html += `<div class="hint">相手の指示（目的）は秘匿のため見えません。</div>`;
     html += `<div class="inspector-spacer"></div>`;
     html += `<button id="deselectUnitBtn" class="close-btn">選択解除</button>`;
@@ -2937,10 +2989,20 @@ function handlePlaceUnit(col, row) {
   // 「敵陣へ瞬間移動」「味方で戦闘しているように見える」「一方が全く動かない」という不具合になっていた
   // （UC報告・実機再現で特定）。owner文字列を含めることで衝突を構造的に無くす。
   const newUnitId = `${player}_${++unitSeq}`;
+  // [2026-09-19] 変化: 配置した瞬間、自分の他の購入済みユニットからランダムで1体選び、
+  // 以後そのキャラになりすます（他にユニットがいなければ変装できないのでnullのまま＝素の姿で表示）。
+  // 純粋に見た目だけの私的な選択（戦闘結果に影響しない）なのでMath.random()で問題ない
+  // （共有シードrngが必要なのは両クライアントの戦闘シミュレーション結果を一致させるためのみ）
+  let disguiseAs = null;
+  if (char.skills.includes("変化")) {
+    const ownedOthers = units.filter(u => u.owner === player);
+    if (ownedOthers.length > 0) disguiseAs = ownedOthers[Math.floor(Math.random() * ownedOthers.length)].charId;
+  }
   units.push({
     // [Block B/rush撤去] デフォルトは「この場を守る」。指示はキャラからドラッグして出す
     id: newUnitId, owner: player, charId: char.id, col, row,
     purpose: "guard", waypoints: null, facing: needsFacing(char) ? 0 : null,
+    disguiseAs, revealed: false,
   });
   queue[player] = queue[player].filter(q => q.qid !== selectedQueueEntry.qid);
   mode = "idle";
@@ -3364,6 +3426,8 @@ const EVENT_LABELS = {
   poison: "毒付与", push: "押し込み", pull: "引き寄せ", linkedAttack: "連携攻撃", heal: "回復",
   followMove: "追従移動", musouRecover: "無双発動", purposeChange: "指示変更", stay: "停止", trapSet: "罠設置",
   marchBoost: "行進曲",
+  reveal: "正体判明",
+  wallBuilt: "壁設置",
 };
 
 // [UI 2026-09-06] UC報告「ログを見ると同じtickで同じ名前のキャラが移動と攻撃を両方していて
@@ -3404,6 +3468,7 @@ const SKILL_CARD_NAME = {
   trapSet: () => "罠設置",
   musouRecover: () => "無双",
   marchBoost: () => "行進曲",
+  wallBuilt: () => "建設",
 };
 
 function appendLogLine(ev) {
@@ -3503,6 +3568,11 @@ function applyEventsForTick(tickEvents) {
         spawnAttackFlash(findDisplayEntity(ev.attackerId), entity);
         break;
       }
+      case "reveal": { // [2026-09-19] 変化: 攻撃を受けて正体が判明した瞬間の演出（戦闘中は元々素の姿で表示済み）
+        const entity = findDisplayEntity(ev.unitId);
+        if (entity) spawnSkillLabel(entity.col, entity.row, "正体判明");
+        break;
+      }
       case "heal": {
         const entity = findDisplayEntity(ev.targetId);
         entity.hp = Math.min(entity.maxHp, entity.hp + ev.amount);
@@ -3550,6 +3620,12 @@ function applyEventsForTick(tickEvents) {
       case "trapSet": { // [UI 2026-09-05] 罠マークを盤面に表示
         addTrapMarker(ev.col, ev.row, ev.owner);
         spawnSkillLabel(ev.col, ev.row, "罠設置");
+        playSE("skill");
+        break;
+      }
+      case "wallBuilt": { // [2026-09-19] 建設。盤面の色は次ラウンド開始時のbuildBoardCells()で反映されるため、
+        // 戦闘中はラベル表示のみ（罠と違って専用マーカー画像は用意していない）
+        spawnSkillLabel(ev.col, ev.row, "建設");
         playSE("skill");
         break;
       }
@@ -3625,6 +3701,8 @@ function resetGameState() {
   regenerateRound1Pool(Date.now());
   roundStartUnitIds = new Set();
   persistentTraps = {};
+  tempWalls = new Map(); // [2026-09-19] 建設の一時壁も新しい試合ではリセットする
+  buildBoardCells(); // [2026-09-19] 前の試合で建った壁の見た目・当たり判定を消す
   mode = "idle";
   selectedQueueEntry = null;
   selectedUnitId = null;
@@ -3873,6 +3951,11 @@ function applyEventHeadless(entityById, ev) {
       if (entity) { entity.hp = ev.hpAfter; entity.ap = ev.apAfter; }
       break;
     }
+    case "reveal": { // [2026-09-19] 変化: 正体判明はラウンドを跨いで引き継ぐ必要があるので明示的に反映する
+      const entity = entityById.get(ev.unitId);
+      if (entity) entity.revealed = true;
+      break;
+    }
     default: break; // linkedAttack/stay/purposeChangeは盤面状態を変えない（P4のapplyEventsForTickと同じ扱い）
   }
 }
@@ -4005,6 +4088,7 @@ function advanceToNextRound() {
       id: u.id, owner: u.owner, charId: u.charId, col: u.col, row: u.row,
       purpose: u.purpose, waypoints: u.waypoints ? u.waypoints.map(w => ({ ...w })) : null, facing: u.facing,
       hp: u.hp, poisoned: !!u.poisoned, apCarry: u.carryoverAp || 0,
+      disguiseAs: u.disguiseAs || null, revealed: !!u.revealed, // [2026-09-19] 変化: 正体判明済みかどうかもラウンドを跨いで引き継ぐ
     });
   }
   unitSeq = Math.max(unitSeq, 0, ...units.map(u => seqPartOfUnitId(u.id)));
@@ -4014,6 +4098,10 @@ function advanceToNextRound() {
   // 「打ち切り後」に仮に設置された罠も含まれ得るが、罠は消えない仕様なので実際より罠が多く
   // 見える程度の誤差に留まる（将来の見直し候補。P3冒頭の暫定解釈リストに準ずる方針）
   persistentTraps = { ...battleResult.traps };
+  // [2026-09-19] 建設で作られた一時壁の残りtickはtempWalls自体が既に最新の状態を保持している
+  // （simulateBattle()実行中に直接書き換わるため、traps同様のコピーは不要）。ここでは新ラウンドの
+  // 配置画面に見た目・当たり判定を反映するためbuildBoardCells()を呼び直すだけでよい
+  buildBoardCells();
 
   queue.player1 = []; queue.player2 = [];
   currentRound = nextRound;
