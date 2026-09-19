@@ -1213,8 +1213,8 @@ function key(col, row) { return `${col},${row}`; }
 
 const WALLS_HALF = [
   // --- P1側(row0〜6)。P2側は自動ミラー ---
-  // 拠点(col5,row0)/(col14,row0)のすぐ手前を守る障害物
-  [5, 3], [14, 3],
+  // [2026-09-19] 拠点をrow0→row3へ3マス前進させたのに伴い、ここにあった(col5,row3)/(col14,row3)の
+  // 障害物は拠点自身の位置と重なるため撤去（UC確認済み）。P2側ミラー(col14,row15)/(col5,row15)も同時に消える
   [9, 1], [10, 1],
   // 中立地帯手前のチョークポイント（行5ラインに5レーンの通路を残す）
   [2, 5], [3, 5], [4, 5],
@@ -1244,9 +1244,11 @@ function inBounds(col, row) { return col >= 0 && col < COLS && row >= 0 && row <
 // [仕様変更] 拠点は固定位置（プレイヤーが選んで置くのではない）。設計書§2参照。
 // 180度点対称。現行のWALLS_HALFと衝突しない位置に決定済み。
 // [2026-08-23] マップ縮小(ROWS=19)に伴いP2側をrow29→row18に更新。
+// [2026-09-19] UC要望「拠点の位置を3マス前に」。P1: row0→row3／P2: row18→row15（180度対称は維持）。
+// 旧位置にあった壁(col5,14 / row3・row15)は拠点と重なるためWALLS_HALFから撤去済み
 const FIXED_BASES = {
-  player1: [{ col: 5, row: 0 }, { col: 14, row: 0 }],
-  player2: [{ col: 5, row: 18 }, { col: 14, row: 18 }],
+  player1: [{ col: 5, row: 3 }, { col: 14, row: 3 }],
+  player2: [{ col: 5, row: 15 }, { col: 14, row: 15 }],
 };
 function resetBasesToFixedPositions() {
   bases.player1 = FIXED_BASES.player1.map(b => ({ ...b }));
