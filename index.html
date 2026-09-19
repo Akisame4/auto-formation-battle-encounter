@@ -197,6 +197,13 @@
     box-shadow: 0 2px 8px rgba(255,212,121,0.25); white-space: nowrap;
   }
   .shop-cta-topbar:hover { filter: brightness(1.05); }
+  /* [UI 2026-09-19] 全軍突撃ボタン。購入ボタン(.shop-cta-topbar)と見分けやすいよう暖色系にした */
+  .rush-cta-topbar {
+    font-family: inherit; font-size: 0.84em; font-weight: 700; color: #fff;
+    background: linear-gradient(160deg, #ff8a5c, #d8541f); border: none; border-radius: 999px; padding: 6px 16px; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(255,138,92,0.25); white-space: nowrap;
+  }
+  .rush-cta-topbar:hover { filter: brightness(1.05); }
   #readyRow { align-items: center; gap: 10px; } /* [UI 2026-09-05] 配置完了は残クレジットとHPバーの間に配置 */
 
   .scrim {
@@ -813,6 +820,7 @@
         <button id="readyBtn" class="btn-primary-lg">配置完了（準備OK）</button>
         <span id="readyStatusLabel" class="status-line"></span>
       </span>
+      <button id="rushAllBtn" type="button" class="rush-cta-topbar" title="配置済みの自分の全キャラの指示を「相手拠点へ突撃」に一括変更します">🚩 全軍突撃</button>
       <div class="credits-pill">残クレジット <span class="amt" id="creditsLabel"></span></div>
       <button id="openShopBtn" class="shop-cta-topbar">＋ キャラを購入</button>
     </div>
@@ -1437,7 +1445,7 @@ let roundStartUnitIds = new Set();
 let persistentTraps = {}; // [P6] ラウンドを跨いで残存する罠（col,row key -> owner）。設計書§8スキル#6
 
 // [Block B] チップUIは廃止しドラッグのみで指示を出す。指示種別自体は読み取り専用表示にのみ使う
-const PURPOSE_LABEL = { guard: "この場を守る", chase: "敵キャラを積極的に追う", goto: "指定マスへ向かう" };
+const PURPOSE_LABEL = { guard: "この場を守る", chase: "敵キャラを積極的に追う", goto: "指定マスへ向かう", rush: "相手拠点へ突撃" };
 // [UI] 配置待ちストリップの「配置済み」カードで使う短縮ラベル（2026-08-23）
 const PURPOSE_SHORT = { guard: "守備", chase: "追撃", goto: "指定マス" };
 
@@ -1789,11 +1797,10 @@ function computeGoal(state, unit, rng) {
     consumeWaypoints(unit);
     return pickReachableWaypoint(state, unit);
   }
-  // [2026-09-19] UC要望「4ラウンド目、基本指示を出さない場合は相手拠点に最短で向かうにしよう」。
-  // 指示を出していない（＝配置時デフォルトのまま変更していない）キャラはpurpose==="guard"のまま
-  // なので、R4に限りguardを「最も近い敵拠点へ最短で向かう」動きに読み替える。攻撃範囲に敵が入れば
-  // performAction側の判定が先に働く（このcomputeGoalは呼ばれない）ため、通常の交戦は妨げない
-  if (unit.purpose === "guard" && state.round4) {
+  // [2026-09-19] UC要望「全ラウンドに全軍突撃ボタンをつけよう」。配置画面の「🚩 全軍突撃」ボタンで
+  // 自分の全ユニットにpurpose="rush"を一括設定できる（ラウンド限定なし、明示的な操作のみで発生）。
+  // 最も近い相手拠点へ、chaseの敵キャラ追跡と同じ方式（毎tick再計算）で向かう
+  if (unit.purpose === "rush") {
     const enemyBases = state.bases.filter(b => b.alive && b.owner !== unit.owner);
     return nearestByHexDistance(unit, enemyBases, rng);
   }
@@ -2488,7 +2495,7 @@ function render() {
     gMarkers.append(circle, label);
     appendCharMarkerImage(gMarkers, unit.charId, x, y, HEX_SIZE * 0.62, `p-${unit.id}`); // [UI 2026-08-25] / [UI 2026-09-02] r拡大
     if (isOwn) {
-      const purposeMark = { guard: "守", chase: "追", goto: "指" }[unit.purpose];
+      const purposeMark = { guard: "守", chase: "追", goto: "指", rush: "突" }[unit.purpose];
       const badgeR = HEX_SIZE * 0.62 * 0.42;
       const badgeX = x + HEX_SIZE * 0.62 * 0.72, badgeY = y + HEX_SIZE * 0.62 * 0.72;
       const pBadgeBg = el("circle", { cx: badgeX, cy: badgeY, r: badgeR.toFixed(1), fill: "#14161a", stroke: "#ffd479", "stroke-width": "1", "pointer-events": "none" });
@@ -3029,6 +3036,18 @@ document.getElementById("resetBtn").addEventListener("click", () => {
 document.getElementById("coordToggle").addEventListener("change", (e) => {
   const vis = e.target.checked ? "visible" : "hidden";
   for (const t of gCoordLabels.children) t.setAttribute("visibility", vis);
+});
+
+// [UI 2026-09-19] UC要望「全てのラウンドに全軍突撃ボタンをつけよう」。押した瞬間、自分が配置済みの
+// 全キャラの指示を一括で「相手拠点へ突撃」(purpose="rush")に変更する。個別にドラッグで指示を出す
+// 手間を省くための一括操作。何度でも押し直せる（後から個別にドラッグで上書きすることも可能）
+document.getElementById("rushAllBtn").addEventListener("click", () => {
+  const mine = units.filter(u => u.owner === currentPlayer);
+  if (mine.length === 0) { showStatus("配置済みのキャラがいません。"); return; }
+  for (const u of mine) { u.purpose = "rush"; u.waypoints = null; }
+  selectedUnitId = null;
+  showStatus(`自分の全キャラ（${mine.length}体）の指示を「相手拠点へ突撃」に設定しました。`);
+  render();
 });
 
 // [UI 2026-09-05] キャラ購入モーダルの開閉
