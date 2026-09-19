@@ -3489,9 +3489,17 @@ function applyEventsForTick(tickEvents) {
   }
 }
 
+// [バグ修正 2026-09-19] UC要望「拠点落としたら即座に終了しよう」。設計書§6-1の即時終了条件
+// （全滅・拠点陥落）はどのラウンドでも試合そのものを即終了させる規定だが、従来の再生は
+// battleResult.tickCount（tickループが機械的に最後まで回った末端）までダラダラ続いてしまっていた。
+// roundOutcome.endedAtTickが本当の決着tickなので、即時終了の場合はそちらを実質的な最終tickとして扱う
+function effectiveTickCount() {
+  if (roundOutcome && roundOutcome.endReason !== "roundEnd") return roundOutcome.endedAtTick;
+  return battleResult.tickCount;
+}
 function updateTickLabel() {
   document.getElementById("tickLabel").textContent =
-    `tick ${playbackTick} / ${battleResult.tickCount}（終了理由: 行動力枯渇/停止）`;
+    `tick ${playbackTick} / ${effectiveTickCount()}（終了理由: 行動力枯渇/停止）`;
 }
 
 function showBattleResult() {
@@ -3499,8 +3507,10 @@ function showBattleResult() {
   const aliveCount = owner => displayState.units.filter(u => u.owner === owner && u.alive).length;
   const reasonLabel = { annihilation: "全滅", baseFall: "拠点陥落", roundEnd: "行動力切れ（拠点HP/与ダメージ/キャラ数で判定）" }[roundOutcome.endReason];
   const winnerLabel = roundOutcome.winner === "draw" ? "引き分け" : (roundOutcome.winner === "player1" ? "プレイヤー1" : "プレイヤー2");
+  // [UI 2026-09-19] UC要望「拠点落としたら即座に終了しよう」で再生自体を決着tickで打ち切るように
+  // したため、「それ以降の再生はご参考」という説明は不要になった。理由だけ添える文言に変更
   const cutoffNote = roundOutcome.endedAtTick < battleResult.tickCount
-    ? `　※実際の決着はtick${roundOutcome.endedAtTick}時点（即時終了条件）。それ以降の再生はご参考です。`
+    ? `　※即時終了条件（tick${roundOutcome.endedAtTick}）により、そこで再生を打ち切りました。`
     : "";
   // [バグ修正 2026-09-05] 設計書§6-1: 全滅・拠点陥落はそのラウンドの勝敗ではなく試合そのものの
   // 即時終了条件。UC報告「拠点を落とされているのに次のラウンドに行けてしまう」に対応し、
@@ -3557,26 +3567,32 @@ function pausePlayback() {
 }
 
 function stepForward() {
-  if (playbackTick >= battleResult.tickCount) { pausePlayback(); showBattleResult(); return; }
+  const lastTick = effectiveTickCount();
+  if (playbackTick >= lastTick) { pausePlayback(); showBattleResult(); return; }
   playbackTick++;
   applyEventsForTick(eventsByTick[playbackTick] || []);
   renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24] 移動に追従して攻撃範囲を更新
   renderBattleBaseHp(); // [UI 2026-09-19] 拠点HPダメージをtickごとに反映
   updateTickLabel();
-  if (playbackTick >= battleResult.tickCount) { pausePlayback(); showBattleResult(); }
+  if (playbackTick >= lastTick) { pausePlayback(); showBattleResult(); }
 }
 
 function startPlayback() {
-  if (playbackTimer || playbackTick >= battleResult.tickCount) return;
+  if (playbackTimer || playbackTick >= effectiveTickCount()) return;
   playbackTimer = setInterval(stepForward, 700 / playbackSpeed);
   document.getElementById("playPauseBtn").textContent = "⏸ 一時停止";
 }
 
 function skipToEnd() {
   pausePlayback();
-  playbackTick = battleResult.tickCount;
-  displayState.units = battleResult.units.map(u => ({ ...u }));
-  displayState.bases = battleResult.bases.map(b => ({ ...b }));
+  // [バグ修正 2026-09-19] 即時終了（全滅・拠点陥落）の場合、battleResult.units/bases（tickループが
+  // 末端まで回った「参考」状態）ではなく、roundOutcome.units/bases（本当の決着tick時点の状態）を使う。
+  // そうしないと「最後まで飛ばす」を押した瞬間だけ、決着後に何が起きたかで数値が変わって見えてしまう
+  const lastTick = effectiveTickCount();
+  const isImmediateEnd = roundOutcome && roundOutcome.endReason !== "roundEnd";
+  playbackTick = lastTick;
+  displayState.units = (isImmediateEnd ? roundOutcome.units : battleResult.units).map(u => ({ ...u }));
+  displayState.bases = (isImmediateEnd ? roundOutcome.bases : battleResult.bases).map(b => ({ ...b }));
   document.getElementById("battleLogFeed").innerHTML = "";
   for (const entity of [...displayState.bases, ...displayState.units]) {
     const m = battleMarkerEls.get(entity.id);
@@ -3596,10 +3612,25 @@ function skipToEnd() {
     if (!entity.alive) m.g.classList.add("death-fade");
     else updateMarkerActivity(entity); // [UI 2026-09-05] 行動力切れユニットの減光
   }
-  for (const ev of battleResult.log) appendLogLine(ev);
+  for (const ev of battleResult.log) {
+    if (ev.tick > lastTick) break; // ログはtick順（simulateBattleが生成した順のまま）
+    appendLogLine(ev);
+  }
   renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24]
   renderBattleBaseHp(); // [UI 2026-09-19]
-  for (const [k, owner] of Object.entries(battleResult.traps)) { // [UI 2026-09-05] 最後まで飛ばした場合も罠を表示
+  // [UI 2026-09-05] 最後まで飛ばした場合も罠を表示。即時終了時は決着tick時点の罠状態を
+  // （引き継ぎ分＋そこまでのtrapSetイベント）から組み立て直す。通常終了時は従来通り最終状態をそのまま使う
+  const trapsToShow = isImmediateEnd
+    ? (() => {
+        const t = { ...persistentTraps };
+        for (const ev of battleResult.log) {
+          if (ev.tick > lastTick) break;
+          if (ev.type === "trapSet") t[key(ev.col, ev.row)] = ev.owner;
+        }
+        return t;
+      })()
+    : battleResult.traps;
+  for (const [k, owner] of Object.entries(trapsToShow)) {
     const [col, row] = k.split(",").map(Number);
     addTrapMarker(col, row, owner);
   }
@@ -3653,6 +3684,10 @@ function enterBattleMode() {
   document.getElementById("boardSlotBattle").appendChild(svg); // [UI] 盤面svgを戦闘画面側のスロットへ移動
   showBattleScreen();
   restartPlayback();
+  // [UI 2026-09-19] UC要望「配置画面から戦闘画面に移ったら互いにアニメーション始まるようにしよう」。
+  // enterBattleMode()は両クライアントがそれぞれ自分のタイミングでローカル実行するため、ここで
+  // 自動再生を開始するだけで両者とも戦闘画面に入った瞬間からアニメーションが始まる（同期通信は不要）
+  startPlayback();
 }
 
 function exitBattleMode() {
