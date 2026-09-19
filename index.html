@@ -322,6 +322,9 @@
 
   .battle-topbar { padding: 12px 20px; border-bottom: 1px solid var(--panel-border); background: var(--panel); }
   .battle-topbar h2 { margin: 0; font-size: 1em; color: var(--text); }
+  /* [UI 2026-09-19] UC要望「戦闘中にも拠点のHPが見えるようにしてほしい」への対応。
+     .base-hp-group自体は既存のflexスタイルをそのまま流用し、タイトル下に折り返して表示する */
+  .battle-topbar .base-hp-group { margin-top: 8px; flex-wrap: wrap; }
   .battle-body { display: grid; grid-template-columns: 1fr 300px; }
   .battle-board-col {
     position: relative; display: flex; align-items: center; justify-content: center; padding: 20px; overflow: auto;
@@ -881,6 +884,7 @@
   <div id="battleScreen" class="screen-view" style="display:none;">
     <div class="battle-topbar">
       <h2 id="battlePanelTitle">戦闘（P3+P4テスト）</h2>
+      <div class="base-hp-group" id="battleBaseHpGroup"></div>
     </div>
     <div class="battle-body">
       <div class="battle-board-col" id="boardSlotBattle">
@@ -2552,19 +2556,27 @@ function render() {
 
 // [UI] 拠点HPバー。拠点は各プレイヤー常に最大2個・1個300HP（設計書§2）が前提。
 // [UI 2026-09-19] UC要望「上の拠点HP表示を2つに分けよう(300,300で)」に対応。従来は2個の拠点HPを
-// 合算して1本（600/600）で表示していたが、拠点ごとに別々のバーで表示するように変更した
-function renderBaseHp() {
-  const group = document.getElementById("baseHpGroup");
-  group.innerHTML = ["player1", "player2"].map(p => {
+// 合算して1本（600/600）で表示していたが、拠点ごとに別々のバーで表示するように変更した。
+// `getBasesForOwner(owner)`にその陣営の拠点配列を渡すだけの汎用関数にして、配置画面(bases)・
+// 戦闘画面(displayState.bases)の両方から使えるようにした（UC要望「戦闘中にも拠点のHPが見えるように」）
+function baseHpGroupHtml(getBasesForOwner) {
+  return ["player1", "player2"].map(p => {
     const tag = p === "player1" ? "p1" : "p2";
     const label = p === "player1" ? "P1" : "P2";
-    return bases[p].map((b, i) => {
+    return getBasesForOwner(p).map((b, i) => {
       const cur = b.hp != null ? b.hp : 300;
       const max = 300;
       const pct = Math.max(0, Math.min(100, (cur / max) * 100));
       return `<div class="base-hp ${tag}"><span class="label">${label}-${i + 1}</span><span class="bar"><i style="width:${pct}%"></i></span><span class="n">${cur}/${max}</span></div>`;
     }).join("");
   }).join("");
+}
+function renderBaseHp() {
+  document.getElementById("baseHpGroup").innerHTML = baseHpGroupHtml(p => bases[p]);
+}
+function renderBattleBaseHp() {
+  document.getElementById("battleBaseHpGroup").innerHTML =
+    baseHpGroupHtml(p => displayState.bases.filter(b => b.owner === p));
 }
 
 function renderCharList() {
@@ -3443,6 +3455,7 @@ function stepForward() {
   playbackTick++;
   applyEventsForTick(eventsByTick[playbackTick] || []);
   renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24] 移動に追従して攻撃範囲を更新
+  renderBattleBaseHp(); // [UI 2026-09-19] 拠点HPダメージをtickごとに反映
   updateTickLabel();
   if (playbackTick >= battleResult.tickCount) { pausePlayback(); showBattleResult(); }
 }
@@ -3479,6 +3492,7 @@ function skipToEnd() {
   }
   for (const ev of battleResult.log) appendLogLine(ev);
   renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24]
+  renderBattleBaseHp(); // [UI 2026-09-19]
   for (const [k, owner] of Object.entries(battleResult.traps)) { // [UI 2026-09-05] 最後まで飛ばした場合も罠を表示
     const [col, row] = k.split(",").map(Number);
     addTrapMarker(col, row, owner);
@@ -3500,6 +3514,7 @@ function restartPlayback() {
   for (const b of displayState.bases) { createBattleMarker(b, true); updateMarkerHpBar(b); }
   for (const u of displayState.units) { createBattleMarker(u, false); updateMarkerHpBar(u); updateMarkerActivity(u); } // [UI 2026-09-05]
   renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24] tick0時点の攻撃範囲を表示
+  renderBattleBaseHp(); // [UI 2026-09-19] tick0時点（前ラウンドから引き継いだ拠点HP）を表示
   seedTrapMarkersFromPersistent(); // [UI 2026-09-05] tick0時点＝前ラウンドから引き継いだ罠のみ表示（巻き戻しにも対応）
   document.getElementById("battleLogFeed").innerHTML = "";
   document.getElementById("battleResultLabel").textContent =
