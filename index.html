@@ -2142,6 +2142,94 @@ function simulateBattle(unitsInput, basesInput, seed, options) {
   };
 }
 
+/* ==================== SE（効果音） ====================
+ * [UI 2026-09-19] UC要望「購入・配置・攻撃・スキル発動・指示のドラッグ・勝敗決定のそれぞれにSEを」。
+ * 外部音源ファイルを用意せず、Web Audio APIでその場合成する（オシレータ+エンベロープ、打撃音のみ
+ * ホワイトノイズ）。ブラウザの自動再生ポリシー上AudioContextは何らかのユーザー操作後でないと鳴らせない
+ * ことがあるため、生成・再生失敗は握りつぶして無音にする（SEが鳴らないだけでゲーム進行は妨げない）。
+ * ==================================================================== */
+let audioCtx = null;
+function getAudioCtx() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  if (!audioCtx) audioCtx = new Ctx();
+  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+// 単音を1つ鳴らす。startAt秒後に開始・dur秒かけて減衰（freqEndを指定するとその周波数までスイープ）
+function playTone(ctx, freq, startAt, dur, opts) {
+  const { type = "sine", vol = 0.2, freqEnd = null } = opts || {};
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  const t0 = ctx.currentTime + startAt;
+  osc.frequency.setValueAtTime(freq, t0);
+  if (freqEnd != null) osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + dur);
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(vol, t0 + 0.005);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.02);
+}
+// ホワイトノイズの短いバースト（打撃音用）。ローパスフィルタで丸めて「シャッ」ではなく「ドスッ」寄りにする
+function playNoiseBurst(ctx, startAt, dur, opts) {
+  const { vol = 0.2, filterFreq = 1200 } = opts || {};
+  const n = Math.max(1, Math.ceil(ctx.sampleRate * dur));
+  const buffer = ctx.createBuffer(1, n, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  const filter = ctx.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.value = filterFreq;
+  const gain = ctx.createGain();
+  const t0 = ctx.currentTime + startAt;
+  gain.gain.setValueAtTime(vol, t0);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  src.connect(filter).connect(gain).connect(ctx.destination);
+  src.start(t0);
+}
+const SE_PRESETS = {
+  buy: (ctx) => { // 購入: レジ音風の明るい2音上昇チャイム
+    playTone(ctx, 880, 0, 0.09, { type: "triangle", vol: 0.18 });
+    playTone(ctx, 1318.5, 0.07, 0.14, { type: "triangle", vol: 0.18 });
+  },
+  place: (ctx) => { // 配置: 駒を盤に置く低めの短いポップ音
+    playTone(ctx, 220, 0, 0.09, { type: "sine", vol: 0.22, freqEnd: 110 });
+  },
+  attack: (ctx) => { // 攻撃: ノイズ+低音の「ドスッ」
+    playNoiseBurst(ctx, 0, 0.06, { vol: 0.18, filterFreq: 2200 });
+    playTone(ctx, 150, 0, 0.07, { type: "square", vol: 0.12, freqEnd: 60 });
+  },
+  skill: (ctx) => { // スキル発動: きらめく上昇3音アルペジオ
+    playTone(ctx, 660, 0, 0.08, { type: "sine", vol: 0.15 });
+    playTone(ctx, 990, 0.04, 0.08, { type: "sine", vol: 0.15 });
+    playTone(ctx, 1320, 0.08, 0.12, { type: "sine", vol: 0.15 });
+  },
+  drag: (ctx) => { // 指示確定: 軽い上昇スイープ音
+    playTone(ctx, 300, 0, 0.1, { type: "sine", vol: 0.12, freqEnd: 700 });
+  },
+  win: (ctx) => { // 勝利: 明るい上昇ファンファーレ
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => playTone(ctx, f, i * 0.1, 0.22, { type: "triangle", vol: 0.2 }));
+  },
+  lose: (ctx) => { // 敗北: 低く落ちていく音
+    [392, 349.23, 293.66, 220].forEach((f, i) => playTone(ctx, f, i * 0.13, 0.28, { type: "sawtooth", vol: 0.14 }));
+  },
+  draw: (ctx) => { // 引き分け: 平坦な2音
+    playTone(ctx, 440, 0, 0.14, { type: "sine", vol: 0.16 });
+    playTone(ctx, 440, 0.16, 0.14, { type: "sine", vol: 0.16 });
+  },
+};
+function playSE(name) {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx || !SE_PRESETS[name]) return;
+    SE_PRESETS[name](ctx);
+  } catch (e) { /* 再生失敗は無視（AudioContext未対応・自動再生ブロック等） */ }
+}
+
 /* ==================== 描画 ==================== */
 
 const svg = document.getElementById("board");
@@ -2789,6 +2877,7 @@ function handlePlaceUnit(col, row) {
   selectedQueueEntry = null;
   // [UI 2026-09-06] UC要望「置いたキャラにはすぐ指示が出せるように選択状態に」への対応
   selectedUnitId = newUnitId;
+  playSE("place");
   showStatus(`${char.name}を配置しました。キャラからドラッグして指示を出してください。`);
   render();
 }
@@ -2809,6 +2898,7 @@ function buyCharacter(player, charId) {
   const char = getCharacter(charId); // 価格・名前は常に基礎値（購入コスト自体は星で変わらない）
   if (credits[player] < char.price) { showStatus("クレジットが足りません。"); return; }
   credits[player] -= char.price;
+  playSE("buy");
   // [UI 2026-09-06] UC要望「購入したキャラを選択状態にする」への対応。購入直後にそのまま盤面を
   // タップして配置できるよう、queueへの追加と同時に配置待ち状態（mode="placeUnit"）にする
   const entry = { qid: ++queueSeq, charId };
@@ -2972,6 +3062,7 @@ function applyDragInstruction(unit, path, release) {
   const char = getCharacter(unit.charId);
   // [Block C] ドラッグ元のキャラを選択状態にしておく。gotoならその場で確定線が見える（C-1: 選択時のみ表示）
   selectedUnitId = unit.id;
+  playSE("drag"); // [UI 2026-09-19] 指示確定（guard/chase/goto/コピーいずれの場合も1回だけ鳴らす）
 
   if (release.col === unit.col && release.row === unit.row) {
     unit.purpose = "guard";
@@ -3318,17 +3409,20 @@ function applyEventsForTick(tickEvents) {
         entity.col = ev.to.col; entity.row = ev.to.row;
         moveMarkerTo(entity, duration);
         spawnSkillLabel(entity.col, entity.row, ev.type === "push" ? "押し込み" : "引き寄せ");
+        playSE("skill");
         break;
       }
       case "attack": { // [UI 2026-09-05] 攻撃でも行動力を消費するのでハイライト判定を更新
         const entity = findDisplayEntity(ev.unitId);
         if (ev.apCost) entity.ap -= ev.apCost;
         updateMarkerActivity(entity);
+        playSE("attack");
         break;
       }
       case "linkedAttack": { // [UI 2026-09-06] 連携攻撃発動時にスキル名を表示
         const entity = findDisplayEntity(ev.unitId);
         if (entity) spawnSkillLabel(entity.col, entity.row, ev.skill || "連携攻撃");
+        playSE("skill");
         break;
       }
       case "damage": {
@@ -3344,6 +3438,7 @@ function applyEventsForTick(tickEvents) {
         entity.hp = Math.min(entity.maxHp, entity.hp + ev.amount);
         updateMarkerHpBar(entity);
         spawnFloatingNumber(entity, `+${ev.amount}`, "#4ade80");
+        playSE("skill");
         break;
       }
       case "death": case "baseDestroyed": {
@@ -3359,10 +3454,12 @@ function applyEventsForTick(tickEvents) {
         const m = battleMarkerEls.get(entity.id);
         if (m) m.poisonDot.setAttribute("visibility", "visible");
         spawnSkillLabel(entity.col, entity.row, "毒");
+        playSE("skill");
         break;
       }
       case "musouRecover": {
         spawnFloatingNumber(findDisplayEntity(ev.unitId), "無双!", "#facc15");
+        playSE("skill");
         break;
       }
       case "marchBoost": { // [2026-09-19] 行進曲: 対象の行動力+1を可視化（ハイライト判定も更新）
@@ -3370,6 +3467,7 @@ function applyEventsForTick(tickEvents) {
         entity.ap += ev.amount;
         updateMarkerActivity(entity);
         spawnFloatingNumber(entity, `+${ev.amount}(行動力)`, "#38bdf8");
+        playSE("skill");
         break;
       }
       case "hpToAp": { // [P7] R4のHP→行動力変換
@@ -3382,6 +3480,7 @@ function applyEventsForTick(tickEvents) {
       case "trapSet": { // [UI 2026-09-05] 罠マークを盤面に表示
         addTrapMarker(ev.col, ev.row, ev.owner);
         spawnSkillLabel(ev.col, ev.row, "罠設置");
+        playSE("skill");
         break;
       }
       default: break; // stay/purposeChange は状態変化なし（ログのみ）
@@ -3431,6 +3530,7 @@ function showMatchResultPopup(winner, reasonLabel) {
   modal.className = `match-result-modal ${resultKind}`;
   document.getElementById("matchResultSub").textContent = `${reasonLabel}による決着`;
   document.getElementById("matchResultScrim").classList.add("open");
+  playSE(resultKind); // [UI 2026-09-19] win/lose/drawの名前がそのままSE_PRESETSのキーと一致する
 }
 
 // [UI 2026-09-05] resetBtn（開発用「全てリセット」）と再戦ボタンで共用するゲーム状態の初期化
