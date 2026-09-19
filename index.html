@@ -563,6 +563,11 @@
     color: var(--text); font-family: "SF Mono", "Consolas", monospace; font-size: 1.1em; letter-spacing: 0.3em;
     text-align: center; padding: 9px 6px 9px 10px; font-variant-numeric: tabular-nums;
   }
+  /* [UI 2026-09-19] マップ選択（ホストのみ）。lobby-code-input inputと見た目を揃えたセレクト */
+  .lobby-map-select {
+    width: 100%; background: #14171f; border: 1px solid var(--panel-border); border-radius: 8px;
+    color: var(--text); font-family: inherit; font-size: 0.86em; padding: 9px 10px; margin-bottom: 8px; cursor: pointer;
+  }
   .lobby-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: #5c6479; font-size: 0.74em; letter-spacing: 0.08em; }
   .lobby-divider::before, .lobby-divider::after { content: ""; flex: 1; height: 1px; background: var(--panel-border); }
   .lobby-dev-skip { margin-top: 22px; background: none; border: none; color: #5c6479; font-size: 0.76em; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
@@ -669,6 +674,10 @@
       <div class="lobby-card">
         <div class="lobby-path">
           <div class="lobby-path-title"><span class="lobby-path-icon">★</span>ホストになる</div>
+          <select id="mapSelect" class="lobby-map-select" title="使用するマップ（ホストが選択、相手にも同じマップが適用されます）">
+            <option value="classic">クラシック（3レーン均等）</option>
+            <option value="laneSplit">レーン分断（左:近接有利／右:遠距離有利）</option>
+          </select>
           <button id="createRoomBtn" class="lobby-btn lobby-btn-primary">ルームを作成</button>
         </div>
         <div class="lobby-divider">または</div>
@@ -823,6 +832,7 @@
 
     <div class="placement-topbar">
       <span class="round-pill">ラウンド <strong id="roundLabel">1</strong> / 4</span>
+      <span class="round-pill" id="mapNameLabel" title="このルームで使用中のマップ"></span>
       <div class="base-hp-group" id="baseHpGroup"></div>
       <span id="statusMsg" class="placement-status-msg"></span>
       <span id="readyRow" style="display:none;">
@@ -1229,11 +1239,61 @@ const WALLS_HALF = [
   [1, 8], [2, 8],
   [17, 8], [18, 8],
 ];
+function buildWallsClassic() {
+  const s = new Set();
+  for (const [c, r] of WALLS_HALF) {
+    s.add(key(c, r));
+    s.add(key(COLS - 1 - c, ROWS - 1 - r)); // 180度点対称ミラー
+  }
+  return s;
+}
 
-const walls = new Set();
-for (const [c, r] of WALLS_HALF) {
-  walls.add(key(c, r));
-  walls.add(key(COLS - 1 - c, ROWS - 1 - r));
+// [2026-09-19] マップ追加「レーン分断」。UC要望「左右レーンに差があるように。右は壁少なく遠距離型有利、
+// 左は壁多く近距離型有利、中央は無しで左右を分断する壁」。
+// classicの180度点対称（col,row両方反転）だと左右が入れ替わってP1/P2で非対称性が逆転してしまうため、
+// この地図だけ行のみ反転するミラー（col不変・row→ROWS-1-row）を使い、両陣営で「左＝近接有利／
+// 右＝遠距離有利」が揃うようにする。中立地帯(row7〜11)はcol9・10を全行封鎖し、通り抜けの隙間を作らない
+// （home側では隙間なくcol9/10をまたげるので、どちらのレーンで攻め込むかは中立地帯突入時に選ぶ形になる）。
+// 接続性はNode script（BFS）で全マスが1つの連結成分になることを確認済み
+const MAP2_WALLS_TOP = [
+  // 中立地帯の中央分断壁（row9で自己ミラー、row7↔11・row8↔10は自動生成）
+  [9, 7], [10, 7], [9, 8], [10, 8], [9, 9], [10, 9],
+  // 左レーン（近接有利、障害物多め）
+  [1, 1], [2, 1], [6, 1], [7, 1],
+  [1, 3], [2, 3], [8, 3],
+  [0, 5], [1, 5], [4, 5], [7, 5], [8, 5],
+  // 右レーン（遠距離有利、障害物少なめ）
+  [16, 3],
+  [17, 5],
+];
+function buildWallsLaneSplit() {
+  const s = new Set();
+  for (const [c, r] of MAP2_WALLS_TOP) {
+    s.add(key(c, r));
+    s.add(key(c, ROWS - 1 - r)); // 行のみ反転ミラー（列は不変、左右非対称を維持）
+  }
+  return s;
+}
+
+const MAPS = {
+  classic: { id: "classic", name: "クラシック（3レーン均等）", build: buildWallsClassic },
+  laneSplit: { id: "laneSplit", name: "レーン分断（左:近接有利／右:遠距離有利）", build: buildWallsLaneSplit },
+};
+let currentMapId = "classic";
+let walls = MAPS[currentMapId].build();
+// [2026-09-19] マップ切替時に呼ぶ。拠点位置(FIXED_BASES)は全マップ共通のため変更不要
+function setMap(mapId) {
+  if (!MAPS[mapId] || mapId === currentMapId) return;
+  currentMapId = mapId;
+  walls = MAPS[mapId].build();
+  // [バグ修正 2026-09-19] 盤面セルの色・クリック可能ヒットボックスはページ読み込み時に一度だけ
+  // 生成される設計だったため、ここで明示的に作り直さないと古いマップの見た目のまま残ってしまう
+  if (typeof buildBoardCells === "function") buildBoardCells();
+  // [バグ修正 2026-09-19] ゲスト側はhandleRoomUpdate()内（配置画面のrender()より前）でsetMap()が
+  // 呼ばれるため、マップ名ラベルだけrender()を待たずにここで直接更新しないと、実際の壁は
+  // 切り替わっているのにラベル表示だけ古いマップ名のまま取り残されてしまっていた
+  const label = document.getElementById("mapNameLabel");
+  if (label) label.textContent = `🗺 ${MAPS[mapId].name}`;
 }
 
 function isWall(col, row) { return walls.has(key(col, row)); }
@@ -2293,50 +2353,59 @@ svg.append(gBase, gTerritory, gGrid, gAttackRange, gTraps, gMarkers, gDragPrevie
 const baseFillCells = new Map();   // key -> polygon（壁/空きマス色）
 const territoryCells = new Map();  // key -> polygon（自陣オーバーレイ）
 
-for (let row = 0; row < ROWS; row++) {
-  for (let col = 0; col < COLS; col++) {
-    const { x, y } = hexCenter(col, row);
-    const pts = hexCorners(x, y);
-    const k = key(col, row);
+// [バグ修正 2026-09-19] マップ追加に伴い関数化。以前はこの中身がトップレベルで一度だけ実行されており、
+// isWall()の結果（壁マスの色・クリック可能マスのヒットボックス）がページ読み込み時点のマップで
+// 焼き付けられてしまっていた。setMap()でマップを切り替えても盤面の見た目・クリック判定が古いマップの
+// ままになる不具合になっていたため、盤面セルの生成を関数化し、マップ切替時にも呼び直せるようにした
+function buildBoardCells() {
+  gBase.innerHTML = ""; gTerritory.innerHTML = ""; gGrid.innerHTML = ""; gCoordLabels.innerHTML = "";
+  baseFillCells.clear(); territoryCells.clear();
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const { x, y } = hexCenter(col, row);
+      const pts = hexCorners(x, y);
+      const k = key(col, row);
 
-    const baseFill = isWall(col, row) ? "var(--wall)" :
-      (row < NEUTRAL_ROW_START ? "var(--empty-p1)" : row > NEUTRAL_ROW_END ? "var(--empty-p2)" : "var(--empty-neutral)");
-    const poly = el("polygon", {
-      points: pts,
-      fill: baseFill,
-      stroke: isWall(col, row) ? "var(--wall-edge)" : "var(--grid-line)",
-      "stroke-width": "1",
-    });
-    gBase.appendChild(poly);
-    baseFillCells.set(k, poly);
-
-    const overlay = el("polygon", { points: pts, fill: "transparent", "pointer-events": "none" });
-    gTerritory.appendChild(overlay);
-    territoryCells.set(k, overlay);
-
-    if (!isWall(col, row)) {
-      const hit = el("polygon", {
-        points: pts, fill: "transparent", stroke: "transparent", "stroke-width": "1.5", class: "hex-clickable",
-        "data-col": col, "data-row": row,
+      const baseFill = isWall(col, row) ? "var(--wall)" :
+        (row < NEUTRAL_ROW_START ? "var(--empty-p1)" : row > NEUTRAL_ROW_END ? "var(--empty-p2)" : "var(--empty-neutral)");
+      const poly = el("polygon", {
+        points: pts,
+        fill: baseFill,
+        stroke: isWall(col, row) ? "var(--wall-edge)" : "var(--grid-line)",
+        "stroke-width": "1",
       });
-      // [Block B] ドラッグ指示システム。自分のユニットからのpointerdownで起点を記録する
-      // （移動追跡・終端判定はdocument側のpointermove/pointerup、下記参照）
-      hit.addEventListener("pointerdown", (e) => startUnitDrag(col, row, e));
-      hit.addEventListener("click", () => {
-        if (unitDragMoved) { unitDragMoved = false; return; } // ドラッグ終端でのクリック誤爆を無視
-        onHexClick(col, row);
+      gBase.appendChild(poly);
+      baseFillCells.set(k, poly);
+
+      const overlay = el("polygon", { points: pts, fill: "transparent", "pointer-events": "none" });
+      gTerritory.appendChild(overlay);
+      territoryCells.set(k, overlay);
+
+      if (!isWall(col, row)) {
+        const hit = el("polygon", {
+          points: pts, fill: "transparent", stroke: "transparent", "stroke-width": "1.5", class: "hex-clickable",
+          "data-col": col, "data-row": row,
+        });
+        // [Block B] ドラッグ指示システム。自分のユニットからのpointerdownで起点を記録する
+        // （移動追跡・終端判定はdocument側のpointermove/pointerup、下記参照）
+        hit.addEventListener("pointerdown", (e) => startUnitDrag(col, row, e));
+        hit.addEventListener("click", () => {
+          if (unitDragMoved) { unitDragMoved = false; return; } // ドラッグ終端でのクリック誤爆を無視
+          onHexClick(col, row);
+        });
+        gGrid.appendChild(hit);
+      }
+
+      const label = el("text", {
+        x, y: y + 3, "text-anchor": "middle", class: "coord-label", visibility: "hidden",
       });
-      gGrid.appendChild(hit);
+      label.textContent = `${colLabel(col)}${row}`;
+      gCoordLabels.appendChild(label);
+      label.dataset.key = k;
     }
-
-    const label = el("text", {
-      x, y: y + 3, "text-anchor": "middle", class: "coord-label", visibility: "hidden",
-    });
-    label.textContent = `${colLabel(col)}${row}`;
-    gCoordLabels.appendChild(label);
-    label.dataset.key = k;
   }
 }
+buildBoardCells();
 
 // 軸ラベル（列: 上端 / 行: 左端）
 for (let col = 0; col < COLS; col += 1) {
@@ -2640,6 +2709,7 @@ function render() {
   renderAttackRangeOverlay(units); // [UI 2026-08-24] 配置済みキャラの攻撃範囲を常時表示
 
   document.getElementById("roundLabel").textContent = currentRound;
+  document.getElementById("mapNameLabel").textContent = `🗺 ${MAPS[currentMapId].name}`; // [UI 2026-09-19]
   renderBaseHp();
 
   renderCharList();
@@ -3666,6 +3736,9 @@ function enterBattleMode() {
   const seedField = document.getElementById("seedInput");
   const seed = parseInt(seedField.value, 10) || Date.now();
   seedField.value = seed;
+  // [UI 2026-09-19] マップ追加。戦闘画面でもどのマップかわかるようにタイトルに付記する
+  const titleEl = document.getElementById("battlePanelTitle");
+  titleEl.textContent = `${titleEl.textContent.replace(/\s*🗺.*$/, "")}　🗺 ${MAPS[currentMapId].name}`;
 
   battleResult = simulateBattle(units, bases, seed, { traps: persistentTraps, round4: currentRound === 4 }); // [P7] §6-3
   roundOutcome = interpretRoundOutcome(battleResult, units, bases, currentRound === 4); // [P6][P7]
@@ -4100,6 +4173,10 @@ function handleRoomUpdate(snap) {
   const data = snap.val();
   if (!data) { lobbyMsg("ルームが削除されました。"); leaveRoomLocal(); return; }
 
+  // [UI 2026-09-19] マップ追加。ホストが作成時に書き込んだmapIdをゲスト（・再接続時は自分自身も）に
+  // 反映する。ルーム作成前のスナップショットにはmapIdが無いこともあるためデフォルトclassicにフォールバック
+  setMap(data.mapId || "classic");
+
   const oppOnlineField = myRole === "player1" ? "guestOnline" : "hostOnline";
   opponentOnline = !!data[oppOnlineField];
   const placements = data.placements || {};
@@ -4189,12 +4266,16 @@ async function createRoom() {
   }
   if (!code) { lobbyMsg("ルームコードの発行に失敗しました。もう一度お試しください。"); return; }
 
+  // [UI 2026-09-19] マップ追加。ホストが選んだマップをルームに書き込み、双方に適用する
+  const mapId = document.getElementById("mapSelect").value;
   await set(ref(db, `rooms/${code}`), {
     status: "waiting",
     createdAt: serverTimestamp(),
     hostOnline: true,
     guestOnline: false,
+    mapId,
   });
+  setMap(mapId);
   // [デッキ機能] R1プールは各プレイヤーが自分のデッキから独立に抽選するため共有不要（相手には非公開の情報）
   regenerateRound1Pool(Date.now());
   enterRoom(code, "player1");
@@ -4225,6 +4306,7 @@ document.getElementById("devSkipLobbyBtn").addEventListener("click", () => {
   // [デッキ機能] createRoom()/joinRoom()を経由しないため、ここで自分のアクティブデッキから
   // 改めて抽選し直す（デッキ画面で選び直した後にここへ来ても反映されるように）
   regenerateRound1Pool(Date.now());
+  setMap(document.getElementById("mapSelect").value); // [UI 2026-09-19] ローカルテストでもマップ選択を反映
   lobbyPhase = "hidden";
   hideLobbyScreen();
   render();
