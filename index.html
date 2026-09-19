@@ -599,6 +599,8 @@
     padding: 7px 10px; font-size: 0.9em; font-family: inherit; flex: 1; min-width: 0;
   }
   .deck-count-pill { font-size: 0.8em; color: var(--text-dim); white-space: nowrap; }
+  .deck-count-pill.incomplete { color: #ff9b9b; }
+  .deck-edit-msg { font-size: 0.82em; color: #ff9b9b; margin-right: auto; align-self: center; }
   .deck-edit-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 18px 16px; }
   .hcard.deck-pick { cursor: pointer; }
 </style>
@@ -630,6 +632,7 @@
     </div>
     <div class="shop-grid" id="deckEditGrid"></div>
     <div class="deck-edit-actions">
+      <span id="deckEditMsg" class="deck-edit-msg"></span>
       <button id="saveDeckBtn" class="lobby-btn lobby-btn-primary">保存</button>
     </div>
   </div>
@@ -826,7 +829,7 @@
           <span class="board-zoom-label">100%</span>
           <button type="button" class="board-zoom-in" title="拡大">＋</button>
           <button type="button" class="board-zoom-reset" title="表示を戻す">リセット</button>
-          <button type="button" id="overviewLinesBtn" class="board-overview-btn" title="ONにすると、選択していないキャラの指示線も薄く常時表示">👁 全軍俯瞰: OFF</button>
+          <button type="button" id="overviewLinesBtn" class="board-overview-btn on" title="ONにすると、選択していないキャラの指示線も薄く常時表示">👁 全軍俯瞰: ON</button>
         </div>
         <svg id="board"></svg>
       </div>
@@ -969,6 +972,10 @@ let editingDeckSlot = null; // 現在エディタで開いているスロット�
 let editingDeckIds = new Set();
 
 function showDeckScreenMsg(text) { document.getElementById("deckScreenMsg").textContent = text; }
+// [バグ修正 2026-09-19] デッキ編集モーダル(#deckEditScrim)は#deckScreenMsgより手前に重なって
+// 表示されるため、showDeckScreenMsg()で出したメッセージはモーダル表示中は隠れて見えなかった
+// （上限超過時の警告など）。モーダル内専用のメッセージ表示先を別に用意する
+function showDeckEditMsg(text) { document.getElementById("deckEditMsg").textContent = text; }
 
 async function loadDecks() {
   const snap = await get(ref(db, `decks/${deviceId}`));
@@ -1023,6 +1030,7 @@ function openDeckEditor(slotIndex) {
   const slot = deckState.slots[slotIndex];
   document.getElementById("deckNameInput").value = slot ? slot.name : `デッキ${slotIndex + 1}`;
   editingDeckIds = new Set(slot && slot.characterIds ? slot.characterIds : []);
+  showDeckEditMsg("");
   renderDeckEditGrid();
   document.getElementById("deckEditScrim").classList.add("open");
 }
@@ -1043,21 +1051,31 @@ function renderDeckEditGrid() {
     card.addEventListener("click", () => toggleDeckCharacter(char.id));
     grid.appendChild(card);
   }
-  document.getElementById("deckCountLabel").textContent = `${editingDeckIds.size}/${DECK_SIZE}`;
+  const countLabel = document.getElementById("deckCountLabel");
+  countLabel.textContent = `${editingDeckIds.size}/${DECK_SIZE}`;
+  countLabel.classList.toggle("incomplete", editingDeckIds.size !== DECK_SIZE);
 }
 
 function toggleDeckCharacter(charId) {
   if (editingDeckIds.has(charId)) {
     editingDeckIds.delete(charId);
   } else {
-    if (editingDeckIds.size >= DECK_SIZE) { showDeckScreenMsg(`デッキには最大${DECK_SIZE}体までしか入れられません。`); return; }
+    if (editingDeckIds.size >= DECK_SIZE) { showDeckEditMsg(`デッキには最大${DECK_SIZE}体までしか入れられません。`); return; }
     editingDeckIds.add(charId);
   }
+  showDeckEditMsg("");
   renderDeckEditGrid();
 }
 
+// [UC要望 2026-09-19] デッキは必ずDECK_SIZE(12)体ちょうど選んだ状態でないと保存できないようにする
+// （それまでは0〜12の任意の体数で保存でき、少ない体数のデッキでもR1抽選プールが小さくなるだけで
+// 一応動いてしまっていた。UCの意図は「8体などの中途半端な数では対戦させない」ため必須化）
 async function saveDeckSlot() {
   if (editingDeckSlot === null) return;
+  if (editingDeckIds.size !== DECK_SIZE) {
+    showDeckEditMsg(`デッキは${DECK_SIZE}体ちょうど選んでください（現在${editingDeckIds.size}体）。`);
+    return;
+  }
   const name = document.getElementById("deckNameInput").value.trim() || `デッキ${editingDeckSlot + 1}`;
   const characterIds = Array.from(editingDeckIds);
   await set(ref(db, `decks/${deviceId}/slots/${editingDeckSlot}`), { name, characterIds, updatedAt: serverTimestamp() });
@@ -2381,7 +2399,8 @@ function renderDragPreview() {
 
 // [UC要望 2026-09-16] 全軍俯瞰ボタンのON/OFF状態（元は押している間だけtrueにする一時表示だったが、
 // トグル式に変更。ON時は選択していない自分のキャラの指示線も薄く常時表示する）
-let overviewMode = false;
+// [UC要望 2026-09-19] デフォルトをONに変更（HTML側のボタン初期表示・onクラスも合わせて変更済み）
+let overviewMode = true;
 const ORDER_LINE_FAINT_OPACITY = 0.32; // 選択していないキャラの指示線の薄さ（全軍俯瞰ON時）
 
 function render() {
