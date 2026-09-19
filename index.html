@@ -1420,10 +1420,10 @@ const ROUND1_CREDITS = 200;
 const credits = { player1: ROUND1_CREDITS, player2: ROUND1_CREDITS };
 let currentRound = 1; // [P6] 1〜4
 
-// [P6] ラウンドごとのプール体数目標（設計書§7、2026-08-19確定）。R2〜R4は「どのキャラが増えるか」
-// （設計書§10未確定#2）が決まるまでは全キャラを見せる暫定運用。確定しているのはR1の「自分のデッキから
-// 6体を抽選」という仕組みのみ
-const ROUND_POOL_SIZE = { 1: 6, 2: 7, 3: 8, 4: 10 };
+// [P6→2026-09-19修正] ラウンドごとのプール体数目標（設計書§7）。UC報告「デッキに入っていない
+// キャラも入っちゃってる」でR2以降が`CHARACTERS`全体（デッキ無視）になっていたバグが発覚し、
+// R1と同じ「自分のデッキから抽選」方式にR2〜R4も統一。体数もUC指定の6/8/10/12に変更
+const ROUND_POOL_SIZE = { 1: 6, 2: 8, 3: 10, 4: 12 };
 
 // [デッキ機能] 1デッキの目標体数。将来キャラが増えても30体中12体、のような意味を持たせるため
 // CHARACTERSの現在数とはあえて連動させず、現在数の方が少ない間だけ実質的に頭打ちになる
@@ -1440,15 +1440,17 @@ function pickRandomPool(seed, count, idPool = CHARACTERS.map(c => c.id)) {
   return ids.slice(0, count).sort();
 }
 
-// 現在購入可能なキャラID一覧。R1はpickRandomPool()でR1開始時に決定（自分のデッキから抽選、
-// デッキ未読込時は暫定で全キャラ）。R2以降は上記の理由で暫定的に全キャラ
+// 現在購入可能なキャラID一覧。全ラウンドともpickRandomPool()で自分のデッキから抽選する
+// （デッキ未読込時は暫定で全キャラ）。プールの抽選自体は相手に見えない私的な情報なので、
+// R1同様R2〜R4もサーバ間で同期する必要はなく、各クライアントが自分のDate.now()で独立に引く
 let currentPool = CHARACTERS.map(c => c.id);
 // [デッキ機能] 現在アクティブなデッキの構成キャラID。loadDecks()完了までは全キャラがデフォルト
 let myDeckCharacterIds = CHARACTERS.map(c => c.id);
-function regenerateRound1Pool(seed) {
+function regenerateRoundPool(round, seed) {
   const source = (myDeckCharacterIds && myDeckCharacterIds.length) ? myDeckCharacterIds : CHARACTERS.map(c => c.id);
-  currentPool = pickRandomPool(seed, Math.min(ROUND_POOL_SIZE[1], source.length), source);
+  currentPool = pickRandomPool(seed, Math.min(ROUND_POOL_SIZE[round], source.length), source);
 }
+function regenerateRound1Pool(seed) { regenerateRoundPool(1, seed); }
 regenerateRound1Pool(Date.now()); // ページ読み込み時点の初期値（デッキ読込前の暫定値。initApp()のloadDecks()後に再抽選される）
 // [P6] 前ラウンドから引き継いだユニットかどうかの判定に使う（再配置制度は2026-09-06にUC判断で撤廃、
 // 引き継ぎユニットは移動・返却とも不可。今ラウンド新規配置ユニットの移動・返却可否の判定にのみ使う）
@@ -3773,9 +3775,10 @@ function advanceToNextRound() {
   for (const p of ["player1", "player2"]) {
     credits[p] += roundBaseCredits;
   }
-  // [P6] R2以降のプール構成（設計書§10未確定#2）はまだキャラ内容が決まっていないため、
-  // 差し当たり全8体を見せる（R1のランダム6体制限はR1限定）
-  if (nextRound >= 2) currentPool = CHARACTERS.map(c => c.id);
+  // [バグ修正 2026-09-19] UC報告「デッキに入っていないキャラも入っちゃってる」。以前はR2以降
+  // `currentPool = CHARACTERS.map(...)`で全キャラを無条件表示しており、デッキ外のキャラも
+  // 買えてしまっていた。R1と同じ「自分のデッキから抽選」方式に統一（体数は設計書§7の表参照）
+  regenerateRoundPool(nextRound, Date.now());
 
   bases.player1 = outcome.bases.filter(b => b.owner === "player1" && b.alive).map(b => ({ col: b.col, row: b.row, hp: b.hp }));
   bases.player2 = outcome.bases.filter(b => b.owner === "player2" && b.alive).map(b => ({ col: b.col, row: b.row, hp: b.hp }));
@@ -3874,7 +3877,7 @@ function myPlacementSnapshot() {
     units: units.filter(u => u.owner === myRole),
     queue: queue[myRole],
     credits: credits[myRole],
-    pool: currentPool, // [デッキ機能] R1の自分専用抽選プール。リロード時に再抽選させず復元するため
+    pool: currentPool, // [デッキ機能] このラウンドの自分専用抽選プール。リロード時に再抽選させず復元するため
   };
 }
 
