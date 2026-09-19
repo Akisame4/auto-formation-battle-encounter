@@ -1789,6 +1789,14 @@ function computeGoal(state, unit, rng) {
     consumeWaypoints(unit);
     return pickReachableWaypoint(state, unit);
   }
+  // [2026-09-19] UC要望「4ラウンド目、基本指示を出さない場合は相手拠点に最短で向かうにしよう」。
+  // 指示を出していない（＝配置時デフォルトのまま変更していない）キャラはpurpose==="guard"のまま
+  // なので、R4に限りguardを「最も近い敵拠点へ最短で向かう」動きに読み替える。攻撃範囲に敵が入れば
+  // performAction側の判定が先に働く（このcomputeGoalは呼ばれない）ため、通常の交戦は妨げない
+  if (unit.purpose === "guard" && state.round4) {
+    const enemyBases = state.bases.filter(b => b.alive && b.owner !== unit.owner);
+    return nearestByHexDistance(unit, enemyBases, rng);
+  }
   return null;
 }
 
