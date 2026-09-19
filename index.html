@@ -1232,15 +1232,27 @@ function computeTerritory(player) {
 
 /* ==================== キャラクター（初期プール8体・仮／設計書§9） ==================== */
 
+// [2026-09-19] UC用意のAFBElist.xlsxに基づきバランス調整＋9体追加。旧値との差分:
+// ガーディアン ap15→13／ランサー ap18→16／アーチャー 攻撃消費2→1／スナイパー 射撃5→8・攻撃消費3→2。
+// オーガはid・スキル・数値そのままで表示名のみ「バーサーカー」に変更（見た目も熊にUC差し替え済み、UC確認済み）
 const CHARACTERS = [
   { id: "soldier", name: "ソルジャー", price: 50, hp: 100, atk: 20, ap: 15, skills: [] },
-  { id: "guardian", name: "ガーディアン", price: 60, hp: 200, atk: 10, ap: 15, skills: ["押し込み"] },
-  { id: "lancer", name: "ランサー", price: 65, hp: 90, atk: 20, ap: 18, skills: ["近接連携攻撃"] },
-  { id: "archer", name: "アーチャー", price: 60, hp: 60, atk: 25, ap: 12, skills: ["射程ボーナス2", "攻撃消費2"] },
-  { id: "sniper", name: "スナイパー", price: 70, hp: 50, atk: 40, ap: 10, skills: ["射撃5", "攻撃消費3"] },
+  { id: "guardian", name: "ガーディアン", price: 60, hp: 200, atk: 10, ap: 13, skills: ["押し込み"] },
+  { id: "lancer", name: "ランサー", price: 65, hp: 90, atk: 20, ap: 16, skills: ["近接連携攻撃"] },
+  { id: "archer", name: "アーチャー", price: 60, hp: 60, atk: 25, ap: 12, skills: ["射程ボーナス2", "攻撃消費1"] },
+  { id: "sniper", name: "スナイパー", price: 70, hp: 50, atk: 40, ap: 10, skills: ["射撃8", "攻撃消費2"] },
   { id: "trapper", name: "トラッパー", price: 55, hp: 70, atk: 10, ap: 6, skills: ["罠設置"] },
   { id: "cleric", name: "クレリック", price: 70, hp: 80, atk: 10, ap: 15, skills: ["全体回復20", "射程ボーナス1"] },
-  { id: "ogre", name: "オーガ", price: 90, hp: 100, atk: 15, ap: 14, skills: ["拠点破壊"] },
+  { id: "ogre", name: "バーサーカー", price: 90, hp: 100, atk: 15, ap: 14, skills: ["拠点破壊"] },
+  { id: "poisoner", name: "毒使い", price: 55, hp: 90, atk: 10, ap: 10, skills: ["毒"] },
+  { id: "gatekeeper", name: "門番", price: 65, hp: 150, atk: 15, ap: 13, skills: ["縄張り"] },
+  { id: "ashigaru", name: "足軽", price: 30, hp: 50, atk: 10, ap: 14, skills: [] },
+  { id: "medic", name: "衛生兵", price: 75, hp: 150, atk: 5, ap: 10, skills: ["単体回復20"] },
+  { id: "lonewolf", name: "孤高", price: 65, hp: 130, atk: 20, ap: 15, skills: ["孤高"] },
+  { id: "hunter", name: "狩人", price: 75, hp: 90, atk: 25, ap: 14, skills: ["移動ボーナス1", "血の匂い"] },
+  { id: "bard", name: "吟遊詩人", price: 80, hp: 70, atk: 5, ap: 15, skills: ["行進曲", "射程ボーナス1"] },
+  { id: "scout", name: "スカウト", price: 60, hp: 120, atk: 20, ap: 10, skills: ["遠距離連携攻撃", "射程ボーナス1"] },
+  { id: "king", name: "王者", price: 200, hp: 150, atk: 25, ap: 20, skills: ["無双"] },
 ];
 
 function getBaseCharacter(charId) { return CHARACTERS.find(c => c.id === charId); }
@@ -1248,14 +1260,40 @@ function getBaseCharacter(charId) { return CHARACTERS.find(c => c.id === charId)
 // [UI] キャラカードの一文字アイコン（2026-08-23: 配置画面リデザインで使用）。
 // 2026-08-25: キャラ画像を追加できるようにした。画像は images/chars/<charId>.png にUCが用意する運用。
 // 画像が無い/読み込みに失敗した場合は自動的にこの一文字アイコンにフォールバックする（下記charImageSrc/onerror参照）。
+// [2026-09-17] UCがファイルを images/chars/game_characters_transparent_1/ と
+// images/chars/game_characters_faces/ の2フォルダに整理したためパスを追従。
 const CHAR_ICON = {
   soldier: "兵", guardian: "盾", lancer: "槍", archer: "弓",
   sniper: "狙", trapper: "罠", cleric: "杖", ogre: "重",
+  poisoner: "毒", gatekeeper: "門", ashigaru: "足", medic: "衛",
+  lonewolf: "孤", hunter: "狩", bard: "詩", scout: "偵", king: "王",
 };
-function charImageSrc(charId) { return `images/chars/${charId}.png`; }
+// [2026-09-17] trapper/ogreはUCが用意した実ファイル名がcharIdと一致しない（動物モチーフへの
+// 差し替え）ため個別に上書き。trapperは全身・顔とも同じspider_trapper.png（顔専用クロップ無し）。
+// [2026-09-19] 追加9体も同様にファイル名がcharIdと一致しないため全員分オーバーライドが必要。
+const CHAR_IMAGE_FILE_OVERRIDE = {
+  trapper: "spider_trapper.png", ogre: "bear_ogre_1.png",
+  poisoner: "snake_poisoner.png", gatekeeper: "doberman_gatekeeper.png",
+  ashigaru: "squirrel_ashigaru.png", medic: "cow_medic.png",
+  lonewolf: "wolf_lone.png", hunter: "tiger_hunter.png",
+  bard: "fennec_bard.png", scout: "porcupine_scout_2.png", king: "lion_champion.png",
+};
+const CHAR_FACE_FILE_OVERRIDE = {
+  trapper: "spider_trapper.png", poisoner: "snake_poisoner.png",
+  gatekeeper: "doberman_gatekeeper.png", ashigaru: "squirrel_ashigaru.png",
+  medic: "cow_medic.png", lonewolf: "wolf_lone.png", hunter: "tiger_hunter.png",
+  bard: "fennec_bard.png", scout: "porcupine_scout_1.png", king: "lion_champion.png",
+};
+function charImageSrc(charId) {
+  const file = CHAR_IMAGE_FILE_OVERRIDE[charId] || `${charId}.png`;
+  return `images/chars/game_characters_transparent_1/${file}`;
+}
 // [UI 2026-09-03] 盤面マーカーは小さく丸くクリップされるため、全身の立ち絵だと何のキャラか分かりづらい
 // (UC指摘)。マーカー専用に顔アップの images/chars/<charId>_face.png を用意する運用にした。
-function charFaceSrc(charId) { return `images/chars/${charId}_face.png`; }
+function charFaceSrc(charId) {
+  const file = CHAR_FACE_FILE_OVERRIDE[charId] || `${charId}_face.png`;
+  return `images/chars/game_characters_faces/${file}`;
+}
 // カード用（HTML文字列内に埋め込む）。読み込み失敗時はこのimgだけ非表示にし、下の文字アイコンを見せる
 function charImageTag(charId) {
   return `<img class="h-icon-img" src="${charImageSrc(charId)}" alt="" onerror="this.style.display='none'">`;
@@ -1301,6 +1339,11 @@ const SKILL_DESCRIPTIONS = {
   "射程ボーナス": "攻撃範囲が全方位にNマス広がる",
   "攻撃消費": "攻撃時の行動力消費がN増える",
   "身軽": "壁マスにも移動可能",
+  "縄張り": "自陣エリアにいる間、攻撃力が2倍になる",
+  "単体回復": "このキャラの攻撃範囲にいる味方キャラ1体のHPをN回復する（行動力1消費。通常の攻撃より優先して行う）",
+  "孤高": "自分の3マス以内に味方がいない時、攻撃力+20",
+  "行進曲": "このキャラ自身が行動力を3消費するたび、攻撃範囲内の味方（自分を除く）の行動力+1（1ラウンドにつき5回まで）",
+  "血の匂い": "指示は聞かず、常に最も近い相手キャラに最短で近づく",
 };
 function skillDescription(skillStr) {
   const m = skillStr.match(/^(.*?)(\d+)$/);
@@ -1562,6 +1605,7 @@ function initBattleState(unitsInput, basesInput, options) {
       facing: u.facing != null ? u.facing : null,
       poisoned: !!u.poisoned,
       apSpentTotal: 0, healTriggerCounter: 0, followUsed: 0,
+      marchTriggerCounter: 0, marchUsedCount: 0,
       isBase: false, alive: true,
     };
   });
@@ -1666,6 +1710,12 @@ function pickTarget(targets, unit, rng) { return nearestByHexDistance(unit, targ
 function effectiveAtk(state, unit) {
   const char = getCharacter(unit.charId);
   let atk = char.atk;
+  if (char.skills.includes("縄張り") && computeTerritory(unit.owner).has(key(unit.col, unit.row))) atk *= 2;
+  if (char.skills.includes("孤高")) {
+    const hasNearbyAlly = state.units.some(a => a.alive && a.owner === unit.owner && a.id !== unit.id &&
+      hexDistance({ col: unit.col, row: unit.row }, { col: a.col, row: a.row }) <= 3);
+    if (!hasNearbyAlly) atk += 20;
+  }
   for (const ally of state.units) {
     if (!ally.alive || ally.owner !== unit.owner || ally.id === unit.id) continue;
     const allyChar = getCharacter(ally.charId);
@@ -1701,6 +1751,11 @@ function pickReachableWaypoint(state, unit) {
 }
 
 function computeGoal(state, unit, rng) {
+  // [2026-09-19] 血の匂い: 指示を無視し、常に最も近い敵を追う（chaseと同じ移動先計算を強制する）
+  if (getCharacter(unit.charId).skills.includes("血の匂い")) {
+    const enemies = state.units.filter(u => u.alive && u.owner !== unit.owner);
+    return nearestByHexDistance(unit, enemies, rng);
+  }
   if (unit.purpose === "chase") {
     const enemies = state.units.filter(u => u.alive && u.owner !== unit.owner);
     return nearestByHexDistance(unit, enemies, rng);
@@ -1814,6 +1869,25 @@ function triggerHealAura(state, unit, log, tick) {
   }
 }
 
+// [2026-09-19] 行進曲: このキャラ自身が行動力を3消費するたび、攻撃範囲内の味方（自分を除く）の
+// 行動力+1。1ラウンドにつき5回まで（marchUsedCountで管理。ラウンド跨ぎはinitBattleStateで0に戻るため
+// 自然に「1ラウンドにつき」になる）。全体回復Nのトリガー方式（apSpentTotal/N切り捨ての差分検出）を流用
+function triggerMarch(state, unit, log, tick) {
+  const char = getCharacter(unit.charId);
+  if (!char.skills.includes("行進曲")) return;
+  if (unit.marchUsedCount >= 5) return;
+  const shouldHaveTriggered = Math.floor(unit.apSpentTotal / 3);
+  if (shouldHaveTriggered <= unit.marchTriggerCounter) return;
+  unit.marchTriggerCounter = shouldHaveTriggered;
+  unit.marchUsedCount += 1;
+  const allies = state.units.filter(a => a.alive && a.owner === unit.owner && a.id !== unit.id &&
+    isInAttackRange(unit, { col: a.col, row: a.row }));
+  for (const ally of allies) {
+    ally.ap += 1;
+    log.push({ tick, type: "marchBoost", unitId: unit.id, targetId: ally.id, amount: 1 });
+  }
+}
+
 function triggerFollow(state, mover, moverOldPos, rng, log, tick) {
   const candidates = state.units.filter(u => {
     if (!u.alive || u.owner !== mover.owner || u.id === mover.id) return false;
@@ -1853,6 +1927,27 @@ function performAction(state, unit, rng, log, tick) {
   const trapOwner = state.traps.get(key(unit.col, unit.row));
   const trapSurcharge = (trapOwner && trapOwner !== unit.owner) ? 1 : 0;
 
+  // [2026-09-19] 単体回復N: 「通常の攻撃より優先される」ため、攻撃判定より前にチェックする。
+  // 対象は攻撃範囲内で負傷している味方のうち最も近い1体（同距離ならランダム、pickTargetと同じ裁定を流用）
+  const singleHealSkill = char.skills.find(s => s.startsWith("単体回復"));
+  if (singleHealSkill) {
+    const n = parseInt(singleHealSkill.slice(4), 10);
+    const wounded = state.units.filter(a => a.alive && a.owner === unit.owner && a.hp < a.maxHp &&
+      isInAttackRange(unit, { col: a.col, row: a.row }));
+    const healTarget = pickTarget(wounded, unit, rng);
+    if (healTarget) {
+      const cost = 1 + trapSurcharge;
+      if (!convertHpForAp(state, unit, cost, log, tick)) return;
+      const healAmt = Math.min(n, healTarget.maxHp - healTarget.hp);
+      healTarget.hp += healAmt;
+      unit.ap -= cost;
+      unit.apSpentTotal += cost;
+      log.push({ tick, type: "heal", healerId: unit.id, targetId: healTarget.id, amount: healAmt });
+      triggerMarch(state, unit, log, tick);
+      return;
+    }
+  }
+
   const targets = findTargetsInRange(state, unit);
   if (targets.length > 0) {
     const atkConsumeSkill = char.skills.find(s => s.startsWith("攻撃消費"));
@@ -1874,6 +1969,7 @@ function performAction(state, unit, rng, log, tick) {
     log.push({ tick, type: "attack", unitId: unit.id, targetIds: hitTargets.map(t => t.id), apCost: cost });
     triggerLinkedAttacks(state, unit, hitTargets, rng, log, tick);
     triggerHealAura(state, unit, log, tick);
+    triggerMarch(state, unit, log, tick);
     return;
   }
 
@@ -1916,6 +2012,7 @@ function performAction(state, unit, rng, log, tick) {
 
   triggerFollow(state, unit, fromPos, rng, log, tick);
   triggerHealAura(state, unit, log, tick);
+  triggerMarch(state, unit, log, tick);
 }
 
 /* ==================== 行動力繰越（§5-4） ==================== */
@@ -3016,6 +3113,7 @@ const EVENT_LABELS = {
   move: "移動", attack: "攻撃", damage: "ダメージ", death: "撃破", baseDestroyed: "拠点陥落",
   poison: "毒付与", push: "押し込み", pull: "引き寄せ", linkedAttack: "連携攻撃", heal: "回復",
   followMove: "追従移動", musouRecover: "無双発動", purposeChange: "指示変更", stay: "停止", trapSet: "罠設置",
+  marchBoost: "行進曲",
 };
 
 // [UI 2026-09-06] UC報告「ログを見ると同じtickで同じ名前のキャラが移動と攻撃を両方していて
@@ -3055,6 +3153,7 @@ const SKILL_CARD_NAME = {
   poison: () => "毒",
   trapSet: () => "罠設置",
   musouRecover: () => "無双",
+  marchBoost: () => "行進曲",
 };
 
 function appendLogLine(ev) {
@@ -3175,6 +3274,13 @@ function applyEventsForTick(tickEvents) {
       }
       case "musouRecover": {
         spawnFloatingNumber(findDisplayEntity(ev.unitId), "無双!", "#facc15");
+        break;
+      }
+      case "marchBoost": { // [2026-09-19] 行進曲: 対象の行動力+1を可視化（ハイライト判定も更新）
+        const entity = findDisplayEntity(ev.targetId);
+        entity.ap += ev.amount;
+        updateMarkerActivity(entity);
+        spawnFloatingNumber(entity, `+${ev.amount}(行動力)`, "#38bdf8");
         break;
       }
       case "hpToAp": { // [P7] R4のHP→行動力変換
