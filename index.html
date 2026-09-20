@@ -234,16 +234,24 @@
   }
   .shop-grid .hcard { width: auto; }
 
-  /* [UI 2026-09-20] UC要望「デッキ編成のときいま選んでいるキャラを上にアイコンで表示」。
-     一覧グリッド(.shop-grid)の外・ヘッダ直下に置くことで、グリッドを下にスクロールしても
-     選択中キャラの並びは常に見える位置に固定される */
-  .deck-edit-selected {
-    display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 18px; border-bottom: 1px solid var(--panel-border);
-    min-height: 40px; align-items: center;
+  /* [UI 2026-09-20] UC要望「デッキ編成のときいま選んでいるキャラを表示」（案B: 左に常時リスト表示）。
+     一覧グリッド(.shop-grid)とは別の固定幅カラムに縦リストで並べることで、スクロールしても
+     選択中12体が常に一目で見える */
+  .deck-edit-selected-list {
+    width: 220px; flex-shrink: 0; overflow-y: auto; padding: 14px 10px;
+    border-right: 1px solid var(--panel-border); display: flex; flex-direction: column; gap: 3px;
   }
-  .deck-edit-selected .deck-edit-selected-empty { font-size: 0.82em; color: var(--text-dim); }
-  .deck-edit-selected .h-icon { width: 34px; height: 34px; border-radius: 8px; font-size: 0.9em; cursor: pointer; }
-  .deck-edit-selected .h-icon:hover { filter: brightness(1.15); }
+  .deck-edit-selected-list-title { font-size: 0.78em; font-weight: 700; color: var(--accent); padding: 0 6px 6px; }
+  .deck-edit-selected-empty { font-size: 0.8em; color: var(--text-dim); padding: 6px; }
+  .deck-edit-selected-row {
+    display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer;
+  }
+  .deck-edit-selected-row:hover { background: rgba(255,255,255,0.05); }
+  .deck-edit-selected-row .deck-edit-selected-idx { font-size: 0.7em; color: var(--text-dim); width: 15px; flex-shrink: 0; text-align: right; }
+  .deck-edit-selected-row .h-icon { width: 28px; height: 28px; border-radius: 7px; font-size: 0.75em; flex-shrink: 0; }
+  .deck-edit-selected-row .deck-edit-selected-name { font-size: 0.8em; flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deck-edit-selected-row .deck-edit-selected-remove { font-size: 0.9em; color: var(--text-dim); flex-shrink: 0; }
+  .deck-edit-selected-row:hover .deck-edit-selected-remove { color: #ff9b9b; }
 
   /* [UI 2026-09-06] UC要望「ゲーム終了時に盤面が見られるようにしてほしい」への対応。
      以前は共通の.scrim（画面全体を暗転+ぼかし）をそのまま使っていたため盤面が見えなくなっていた。
@@ -636,7 +644,11 @@
     border-radius: 8px; padding: 7px 12px; font-size: 0.8em; cursor: pointer; font-family: inherit;
   }
   .deck-slot-edit-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
-  .deck-edit-modal { width: min(760px, 100%); }
+  .deck-edit-modal { width: min(920px, 100%); }
+  /* [UI 2026-09-20] UC要望「デッキ編成が見づらい、12枠しっかり見えるように」への対応（案B採用）。
+     左に選択中12体の常時リスト、右に一覧グリッドの2カラム構成にした */
+  .deck-edit-body { display: flex; flex: 1; min-height: 0; }
+  .deck-edit-body .shop-grid { flex: 1; min-width: 0; }
   .deck-name-input {
     background: var(--bg); border: 1px solid var(--panel-border); border-radius: 6px; color: var(--text);
     padding: 7px 10px; font-size: 0.9em; font-family: inherit; flex: 1; min-width: 0;
@@ -673,8 +685,10 @@
       <span class="deck-count-pill" id="deckCountLabel">0/12</span>
       <button class="shop-modal-close" id="closeDeckEditBtn">✕</button>
     </div>
-    <div id="deckEditSelectedRow" class="deck-edit-selected"></div>
-    <div class="shop-grid" id="deckEditGrid"></div>
+    <div class="deck-edit-body">
+      <div id="deckEditSelectedList" class="deck-edit-selected-list"></div>
+      <div class="shop-grid" id="deckEditGrid"></div>
+    </div>
     <div class="deck-edit-actions">
       <span id="deckEditMsg" class="deck-edit-msg"></span>
       <button id="saveDeckBtn" class="lobby-btn lobby-btn-primary">保存</button>
@@ -1108,26 +1122,33 @@ function renderDeckEditGrid() {
   const countLabel = document.getElementById("deckCountLabel");
   countLabel.textContent = `${editingDeckIds.size}/${DECK_SIZE}`;
   countLabel.classList.toggle("incomplete", editingDeckIds.size !== DECK_SIZE);
-  renderDeckEditSelectedRow();
+  renderDeckEditSelectedList();
 }
 
-// [UI 2026-09-20] UC要望「デッキ編成のときいま選んでいるキャラを上にアイコンで表示」への対応。
-// クリックでtoggleDeckCharacter()を呼ぶのはグリッド側カードと同じ挙動（選択解除）
-function renderDeckEditSelectedRow() {
-  const row = document.getElementById("deckEditSelectedRow");
-  row.innerHTML = "";
+// [UI 2026-09-20] UC要望「デッキ編成が見づらい、12枠しっかり見えるように」への対応（案B採用）。
+// 左カラムに選択中12体を縦リストで常時表示。クリックでtoggleDeckCharacter()を呼ぶのは
+// グリッド側カードと同じ挙動（選択解除）
+function renderDeckEditSelectedList() {
+  const list = document.getElementById("deckEditSelectedList");
+  list.innerHTML = `<div class="deck-edit-selected-list-title">選択中 ${editingDeckIds.size}/${DECK_SIZE}</div>`;
   if (editingDeckIds.size === 0) {
-    row.innerHTML = `<span class="deck-edit-selected-empty">まだキャラが選択されていません。</span>`;
+    list.innerHTML += `<div class="deck-edit-selected-empty">まだキャラが選択されていません。</div>`;
     return;
   }
+  let i = 0;
   for (const charId of editingDeckIds) {
+    i++;
     const char = getCharacter(charId);
-    const icon = document.createElement("div");
-    icon.className = "h-icon";
-    icon.innerHTML = `${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}`;
-    icon.title = char.name;
-    icon.addEventListener("click", () => toggleDeckCharacter(char.id));
-    row.appendChild(icon);
+    const row = document.createElement("div");
+    row.className = "deck-edit-selected-row";
+    row.innerHTML =
+      `<span class="deck-edit-selected-idx">${i}</span>` +
+      `<div class="h-icon">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
+      `<span class="deck-edit-selected-name">${char.name}</span>` +
+      `<span class="deck-edit-selected-remove">✕</span>`;
+    row.title = char.name;
+    row.addEventListener("click", () => toggleDeckCharacter(char.id));
+    list.appendChild(row);
   }
 }
 
