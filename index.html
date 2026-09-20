@@ -474,20 +474,33 @@
   }
   /* [UI 2026-09-06] バトルログの演出強化（UC要望「バトルログをお洒落にしたい」）。
      移動は最小限に、スキル発動だけ肖像カードで目立たせる（格闘ゲームのコンボ表示的な発想） */
-  .log-move { display: flex; align-items: center; gap: 5px; padding: 0 2px; opacity: 0.55; font-size: 0.92em; }
-  .log-move .dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  /* [UI 2026-09-20] UC要望「ログが見づらい、移動よりダメージとスキルを優先で出してほしい」への対応（案B採用）。
+     行を折りたたまず全部表示したまま、移動はさらに小さく薄く、ダメージは左に赤帯＋大きめの数字、
+     撃破・拠点陥落は金枠バナーで目立たせて視覚的な優先度をつけた */
+  .log-move { display: flex; align-items: center; gap: 5px; padding: 0 2px; opacity: 0.38; font-size: 0.8em; }
+  .log-move .dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
   .log-line { padding: 1px 2px; }
+  .log-line.dmg-line {
+    display: flex; align-items: center; gap: 6px; padding: 4px 6px; margin: 2px 0;
+    background: rgba(239,68,68,0.08); border-left: 3px solid #ef4444; border-radius: 0 6px 6px 0;
+    font-size: 1.08em;
+  }
   .who { font-weight: 700; }
   .who.p1 { color: var(--p1); }
   .who.p2 { color: var(--p2); }
-  .log-line .dmg { color: #ef4444; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .log-line .dmg { color: #ef4444; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 1.15em; }
   .log-line .heal { color: var(--ok); font-weight: 700; }
-  .log-skillcard {
-    display: flex; gap: 8px; padding: 6px; border-radius: 7px; margin: 2px 0;
-    background: rgba(255,212,121,0.06); border: 1px solid rgba(255,212,121,0.35);
+  .log-defeat {
+    padding: 6px 8px; margin: 4px 0; text-align: center; font-weight: 800; font-size: 1.1em;
+    color: var(--accent); background: rgba(255,212,121,0.1); border: 1px solid var(--accent); border-radius: 8px;
   }
-  .log-skillcard.p1 { border-color: rgba(74,144,217,0.45); background: rgba(74,144,217,0.09); }
-  .log-skillcard.p2 { border-color: rgba(217,87,74,0.45); background: rgba(217,87,74,0.09); }
+  .log-skillcard {
+    display: flex; gap: 8px; padding: 7px 8px; border-radius: 8px; margin: 3px 0;
+    background: rgba(255,212,121,0.06); border: 1.5px solid rgba(255,212,121,0.35);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
+  .log-skillcard.p1 { border-color: var(--p1); background: rgba(74,144,217,0.14); }
+  .log-skillcard.p2 { border-color: var(--p2); background: rgba(217,87,74,0.14); }
   .log-skillcard .portrait {
     width: 36px; height: 36px; border-radius: 6px; overflow: hidden; flex-shrink: 0; background: #000;
   }
@@ -497,7 +510,7 @@
   .log-skillcard .nameline .tick { font-weight: 400; color: var(--text-faint); }
   .log-skillcard.p1 .nameline .n { color: var(--p1); }
   .log-skillcard.p2 .nameline .n { color: var(--p2); }
-  .log-skillcard .skillname { font-size: 0.9em; font-weight: 700; color: var(--accent); }
+  .log-skillcard .skillname { font-size: 1em; font-weight: 800; color: var(--accent); }
   .log-skillcard .skillname::before { content: "✦ "; }
   .speed-btn.active { border-color: #ffd479; color: #ffd479; }
   @keyframes floatUp {
@@ -2087,7 +2100,10 @@ function resolveAttack(state, attacker, target, rng, log, tick, opts) {
     target.poisoned = true;
     log.push({ tick, type: "poison", unitId: attacker.id, targetId: target.id });
   }
-  if (!isExtra) {
+  // [バグ修正 2026-09-20] UC報告「拠点が押し込みで押し込まれました」。拠点は固定位置の設置物で
+  // （設計書§2「位置は固定」）、他のスキルの効果対象外にしている拠点判定（毒・無双・解析と同様）が
+  // 押し込み・引き寄せだけ抜け落ちていた。target.isBaseの時は発動自体させない
+  if (!isExtra && !target.isBase) {
     if (attackerChar.skills.includes("押し込み") && rng() < 0.5) applyPush(state, attacker, target, log, tick);
     else if (attackerChar.skills.includes("引き寄せ") && rng() < 0.5) applyPull(state, attacker, target, log, tick);
   }
@@ -2176,17 +2192,42 @@ function triggerMarch(state, unit, log, tick) {
   }
 }
 
-function triggerFollow(state, mover, moverOldPos, rng, log, tick) {
-  const candidates = state.units.filter(u => {
-    if (!u.alive || u.owner !== mover.owner || u.id === mover.id) return false;
-    const char = getCharacter(u.charId);
-    const followSkill = char.skills.find(s => s.startsWith("追従"));
-    if (!followSkill) return false;
-    if ((u.followUsed || 0) >= 5) return false;
+// [バグ修正 2026-09-20] UC報告「追従Nの挙動がわりと意味不明」。設計書§8の「対象候補が複数いる場合は
+// 最も敵拠点に近い味方、それでも複数ならランダム」が実装されておらず、以前は移動イベントのたびに
+// （＝performAction()の移動処理の直後に）即発動していたため、同じtickで複数の味方が移動すると
+// 追従N持ちがその都度反応し、1tickで何度も動いてしまっていた。tickの全行動が終わった後に一度だけ
+// 呼び、そのtick中の移動イベントをログからまとめて集計してから、追従N持ちごとに「最も敵拠点に
+// 近い移動先」を1つだけ選んで追従させる（同着ならランダム）
+function resolveFollowsForTick(state, log, tick, rng) {
+  const movers = log
+    .filter(e => e.tick === tick && e.type === "move")
+    .map(e => ({ unit: state.units.find(u => u.id === e.unitId), from: e.from }))
+    .filter(m => m.unit && m.unit.alive);
+  if (movers.length === 0) return;
+
+  for (const follower of state.units) {
+    if (!follower.alive) continue;
+    const followSkill = getCharacter(follower.charId).skills.find(s => s.startsWith("追従"));
+    if (!followSkill) continue;
+    if ((follower.followUsed || 0) >= 5) continue;
     const n = parseInt(followSkill.slice(2), 10);
-    return hexDistance({ col: u.col, row: u.row }, moverOldPos) <= n;
-  });
-  for (const follower of candidates) {
+    const candidates = movers.filter(m => m.unit.owner === follower.owner && m.unit.id !== follower.id &&
+      hexDistance({ col: follower.col, row: follower.row }, m.from) <= n);
+    if (candidates.length === 0) continue;
+
+    const enemyBases = state.bases.filter(b => b.alive && b.owner !== follower.owner);
+    let chosen = candidates[0];
+    if (candidates.length > 1) {
+      let minDist = Infinity, best = [];
+      for (const c of candidates) {
+        let d = Infinity;
+        for (const b of enemyBases) d = Math.min(d, hexDistance({ col: c.unit.col, row: c.unit.row }, { col: b.col, row: b.row }));
+        if (d < minDist) { minDist = d; best = [c]; } else if (d === minDist) best.push(c);
+      }
+      chosen = best[rngInt(rng, best.length)];
+    }
+
+    const mover = chosen.unit;
     const path = findPath({ col: follower.col, row: follower.row }, { col: mover.col, row: mover.row }, (c, r) => isBlockedForUnit(state, follower, c, r));
     if (!path || path.length <= 1) continue;
     const dest = path[path.length - 2];
@@ -2358,7 +2399,10 @@ function performAction(state, unit, rng, log, tick) {
     log.push({ tick, type: "purposeChange", unitId: unit.id, purpose: "guard" });
   }
 
-  triggerFollow(state, unit, fromPos, rng, log, tick);
+  // [バグ修正 2026-09-20] 追従Nはここでは発動させない。以前はここで移動のたびに即発動させていたため、
+  // 同じtickで複数の味方が移動すると追従N持ちがその都度反応し、1tickに何度も動いてしまっていた
+  // （設計書の「候補が複数いる場合は1体選ぶ」が実装されていなかった）。tickの全行動が終わった後に
+  // resolveFollowsForTick()でこのtick内の移動をまとめて評価し、追従N持ちごとに1回だけ発動させる
   triggerHealAura(state, unit, log, tick);
   triggerMarch(state, unit, log, tick);
 }
@@ -2418,6 +2462,8 @@ function simulateBattle(unitsInput, basesInput, seed, options) {
       // "stay"（動けず停止・行動力消費なし）だけが積まれた場合は盤面に変化なし＝手詰まり候補
       if (log.slice(beforeLen).some(e => e.type !== "stay")) tickHadRealAction = true;
     }
+    // [2026-09-20] 追従N: このtickで実際に発生した移動をまとめて評価し、追従N持ちごとに1回だけ発動させる
+    resolveFollowsForTick(state, log, tick, rng);
     if (!tickHadRealAction) break; // 全員が停止状態＝これ以上盤面が動かない（§5-1後段）
   }
 
@@ -3769,8 +3815,19 @@ function appendLogLine(ev) {
     return;
   }
 
+  // [UI 2026-09-20] UC要望「移動よりダメージとスキルを優先で出してほしい」（案B）。
+  // 撃破・拠点陥落は金枠バナーで最優先表示にする
+  if (ev.type === "death" || ev.type === "baseDestroyed") {
+    const div = document.createElement("div");
+    div.className = "log-defeat";
+    div.innerHTML = `💥 ${EVENT_LABELS[ev.type]}：${entityLabelHtml(ev.unitId)}`;
+    feed.appendChild(div);
+    feed.scrollTop = feed.scrollHeight;
+    return;
+  }
+
   const div = document.createElement("div");
-  div.className = "log-line";
+  div.className = ev.type === "damage" ? "log-line dmg-line" : "log-line";
   let html = `[t${ev.tick}] ${EVENT_LABELS[ev.type] || ev.type}`;
   if (ev.unitId != null) html += ` ${entityLabelHtml(ev.unitId)}`;
   if (ev.targetId != null) html += ` → ${entityLabelHtml(ev.targetId)}`;
