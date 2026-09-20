@@ -1445,7 +1445,7 @@ const CHARACTERS = [
   // [2026-09-19] AFBElist.xlsx更新（UC追記）に基づき6体追加。追従N・移動ボーナスNの具体的な数値は
   // シートに未記載だったためUC確認済み（柴犬=追従2、フェンサー=移動ボーナス1）
   { id: "tank", name: "タンク", price: 100, hp: 300, atk: 10, ap: 8, skills: [] },
-  { id: "ninja", name: "忍者", price: 75, hp: 80, atk: 25, ap: 15, skills: ["変化"] },
+  { id: "ninja", name: "忍者", price: 60, hp: 80, atk: 25, ap: 15, skills: ["身軽"] },
   { id: "samurai", name: "侍", price: 70, hp: 100, atk: 20, ap: 14, skills: ["追従2"] },
   { id: "parrotbard", name: "バード", price: 80, hp: 70, atk: 15, ap: 15, skills: ["身軽", "行進曲"] },
   { id: "crafter", name: "クラフター", price: 60, hp: 80, atk: 5, ap: 8, skills: ["建設"] },
@@ -1453,10 +1453,10 @@ const CHARACTERS = [
   // [2026-09-20] AFBElist.xlsx更新（旧「まだ検討中」7体分。スキル効果がシートに追記され定義された）に基づき追加
   { id: "boxer", name: "ボクサー", price: 70, hp: 110, atk: 15, ap: 14, skills: ["ワンツー", "攻撃消費1"] },
   { id: "gladiator", name: "グラディエーター", price: 85, hp: 180, atk: 25, ap: 13, skills: ["突進"] },
-  { id: "priest", name: "僧侶", price: 100, hp: 100, atk: 5, ap: 12, skills: ["全体回復10", "射程ボーナス2"] },
+  { id: "priest", name: "僧侶", price: 100, hp: 100, atk: 5, ap: 12, skills: ["全体回復20", "射程ボーナス2"] },
   { id: "carrier", name: "キャリアー", price: 70, hp: 100, atk: 15, ap: 16, skills: ["牽引"] },
-  { id: "merchant", name: "マーチャント", price: 65, hp: 60, atk: 10, ap: 8, skills: ["商売"] },
-  { id: "cleaner", name: "クリーナー", price: 60, hp: 70, atk: 10, ap: 13, skills: ["死肉あさり", "射程ボーナス1"] },
+  { id: "merchant", name: "マーチャント", price: 40, hp: 60, atk: 10, ap: 8, skills: ["商売"] },
+  { id: "cleaner", name: "クリーナー", price: 60, hp: 70, atk: 10, ap: 13, skills: ["死肉あさり", "射程ボーナス2"] },
   { id: "scholar", name: "学者", price: 65, hp: 60, atk: 5, ap: 12, skills: ["解析", "射程ボーナス1"] },
 ];
 
@@ -1549,7 +1549,7 @@ const SKILL_DESCRIPTIONS = {
   "罠設置": "このキャラが通ったマスに罠を設置。罠マスの上で敵キャラが行動するたび行動力を追加で1消費させる",
   "押し込み": "攻撃時50%で発動。対象を攻撃者から見て反対方向へ直線3マス後退させる",
   "引き寄せ": "攻撃時50%で発動。対象を自分の隣接マス（対象がいた方向）に移動させる",
-  "全体回復": "このキャラ自身が行動力を5消費するたび、自分の攻撃範囲にいる味方キャラのHPをN回復する",
+  "全体回復": "このキャラ自身が行動力を3消費するたび、自分の攻撃範囲にいる味方キャラのHPをN回復する",
   "毒": "攻撃した敵に毒を付与。毒状態の敵は攻撃を受けるたび追加で10ダメージ",
   "拠点破壊": "拠点への攻撃時、攻撃力+100",
   "強化": "自分の攻撃範囲にいる味方の攻撃力+20（範囲内にいる間だけ有効）",
@@ -2064,9 +2064,14 @@ function resolveAttack(state, attacker, target, rng, log, tick, opts) {
   // [2026-09-20] 解析: 攻撃者が射程ボーナスN持ちの場合、対象の攻撃範囲内にいる解析持ちの
   // 味方1体でも存在すれば被ダメージを半減（下限5、UC確認済み）
   if (!target.isBase && attackerChar.skills.some(s => s.startsWith("射程ボーナス"))) {
-    const protectedByScholar = state.units.some(u => u.alive && u.owner === target.owner &&
+    const scholar = state.units.find(u => u.alive && u.owner === target.owner &&
       getCharacter(u.charId).skills.includes("解析") && isInAttackRange(u, { col: target.col, row: target.row }));
-    if (protectedByScholar) dmg = Math.max(5, Math.floor(dmg / 2));
+    if (scholar) {
+      dmg = Math.max(5, Math.floor(dmg / 2));
+      // [UI 2026-09-20] UC要望「解析、効いてるのかわかりづらいので発動ラベルを追加」。
+      // 他のスキルと同じくログ・盤面ラベルで発動を可視化する（盤面状態は変えないためheadless側の対応は不要）
+      log.push({ tick, type: "analysis", unitId: scholar.id, targetId: target.id });
+    }
   }
 
   applyDamage(state, target, dmg, log, tick, attacker);
@@ -2138,7 +2143,8 @@ function triggerHealAura(state, unit, log, tick) {
   const healSkill = char.skills.find(s => s.startsWith("全体回復"));
   if (!healSkill) return;
   const n = parseInt(healSkill.slice(4), 10);
-  const shouldHaveTriggered = Math.floor(unit.apSpentTotal / 5);
+  // [2026-09-20仕様変更] UC指示「全体回復の仕様変更　３消費するたびに変更」。5消費毎→3消費毎に変更
+  const shouldHaveTriggered = Math.floor(unit.apSpentTotal / 3);
   if (shouldHaveTriggered <= unit.healTriggerCounter) return;
   unit.healTriggerCounter = shouldHaveTriggered;
   const allies = state.units.filter(a => a.alive && a.owner === unit.owner && isInAttackRange(unit, { col: a.col, row: a.row }));
@@ -2317,8 +2323,15 @@ function performAction(state, unit, rng, log, tick) {
   }
   // [2026-09-19] 建設: 通ったマスにWALL_BUILD_DURATIONtick持続する壁を設置する（UC確認済み:
   // ラウンドをまたいでもtickカウントは引き継がれる＝tempWallsはラウンド間でリセットしない一時壁専用の変数を使う）
+  // [バグ修正 2026-09-20] UC報告「クラフターが壁に埋まり、動かせなくなる」。以前は`traversed`
+  // （今回移動した先の到達マス含む）をそのまま壁にしていたため、クラフターは移動ボーナスを
+  // 持たず常に1マスだけ移動する＝`traversed`が「今立っている1マスのみ」になり、毎回自分の
+  // 現在地を壁化していた（isWall()がtrueになるマスは配置画面でクリック判定自体が消えるため、
+  // 次ラウンドでそのクラフターを選択・移動できなくなっていた）。「通った道」＝今回離れたマスと
+  // 判定して、最後に到達したマス（＝現在地）は壁にしないよう修正
   if (char.skills.includes("建設")) {
-    for (const cell of traversed) {
+    const wallCells = [fromPos, ...traversed.slice(0, -1)];
+    for (const cell of wallCells) {
       tempWalls.set(key(cell.col, cell.row), WALL_BUILD_DURATION);
       log.push({ tick, type: "wallBuilt", unitId: unit.id, col: cell.col, row: cell.row, owner: unit.owner });
     }
@@ -2584,16 +2597,30 @@ function buildBoardCells() {
       const pts = hexCorners(x, y);
       const k = key(col, row);
 
-      const baseFill = isWall(col, row) ? "var(--wall)" :
+      // [バグ修正 2026-09-20] UC報告「配置画面の建設で作った壁が普通の壁にみえる」。以前は
+      // isWall()（固定壁・一時壁の両方を含む）だけで色分けしており、区別がつかなかった。
+      // マップ固定壁とクラフターの一時壁を別々に判定し、一時壁は戦闘再生中の一時壁マーカー
+      // （#gTempWalls）と同じ配色・破線にした上で残りtick数も表示する
+      const isPermanentWall = walls.has(k);
+      const tempWallRemain = tempWalls.get(k);
+      const isTempWall = tempWallRemain != null;
+      const baseFill = isPermanentWall ? "var(--wall)" : isTempWall ? "var(--temp-wall)" :
         (row < NEUTRAL_ROW_START ? "var(--empty-p1)" : row > NEUTRAL_ROW_END ? "var(--empty-p2)" : "var(--empty-neutral)");
       const poly = el("polygon", {
         points: pts,
         fill: baseFill,
-        stroke: isWall(col, row) ? "var(--wall-edge)" : "var(--grid-line)",
-        "stroke-width": "1",
+        stroke: isPermanentWall ? "var(--wall-edge)" : isTempWall ? "var(--temp-wall-edge)" : "var(--grid-line)",
+        "stroke-width": isTempWall ? "2" : "1",
       });
+      if (isTempWall) poly.setAttribute("stroke-dasharray", "5,3");
       gBase.appendChild(poly);
       baseFillCells.set(k, poly);
+
+      if (isTempWall) {
+        const wallCountLabel = el("text", { x, y: y + 5, "text-anchor": "middle", class: "temp-wall-count" });
+        wallCountLabel.textContent = tempWallRemain;
+        gBase.appendChild(wallCountLabel);
+      }
 
       const overlay = el("polygon", { points: pts, fill: "transparent", "pointer-events": "none" });
       gTerritory.appendChild(overlay);
@@ -3661,6 +3688,7 @@ const EVENT_LABELS = {
   reveal: "正体判明",
   wallBuilt: "壁設置",
   towMove: "牽引移動", scavenge: "死肉あさり", merchantBonus: "商売発動",
+  analysis: "解析発動",
 };
 
 // [UI 2026-09-06] UC報告「ログを見ると同じtickで同じ名前のキャラが移動と攻撃を両方していて
@@ -3706,6 +3734,7 @@ const SKILL_CARD_NAME = {
   towMove: () => "牽引",
   scavenge: () => "死肉あさり",
   merchantBonus: () => "商売",
+  analysis: () => "解析",
 };
 
 function appendLogLine(ev) {
@@ -3900,6 +3929,14 @@ function applyEventsForTick(tickEvents) {
       case "merchantBonus": { // [2026-09-20] 商売: 次ラウンドのクレジット積み立てを可視化
         const entity = findDisplayEntity(ev.unitId);
         if (entity) spawnFloatingNumber(entity, `+${ev.amount}cr(次R)`, "#ffd479");
+        break;
+      }
+      case "analysis": { // [UI 2026-09-20] UC要望「解析、効いてるのかわかりづらい」への対応。
+        // 被害を軽減された対象（targetId）の位置にラベルを出す（ダメージ数字と同じ場所で
+        // 「軽減された」ことが一目でわかるように）
+        const target = findDisplayEntity(ev.targetId);
+        if (target) spawnSkillLabel(target.col, target.row, "解析");
+        playSE("skill");
         break;
       }
       default: break; // stay/purposeChange は状態変化なし（ログのみ）
