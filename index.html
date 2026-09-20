@@ -17,6 +17,8 @@
     --p2-dark: #8a2c2c;
     --wall: #14161a;
     --wall-edge: #3a3e46;
+    --temp-wall: rgba(200, 138, 61, 0.55);
+    --temp-wall-edge: #e0a24c;
     --empty-p1: #2a3542;
     --empty-p2: #3f2a2a;
     --empty-neutral: #2f3238;
@@ -439,6 +441,15 @@
   svg text.axis-label {
     fill: var(--text-dim);
     font-size: 10px;
+    pointer-events: none;
+    user-select: none;
+  }
+  /* [UI 2026-09-20] UC要望「建設したときに専用の壁表示（5,4,3,2,1と変わるもの）を」への対応 */
+  svg text.temp-wall-count {
+    fill: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
     pointer-events: none;
     user-select: none;
   }
@@ -2420,13 +2431,14 @@ const gTerritory = el("g", { id: "gTerritory" });
 const gGrid = el("g", { id: "gGrid" });
 const gAttackRange = el("g", { id: "gAttackRange" }); // [UI 2026-08-24] ユニットの攻撃範囲オーバーレイ（配置画面・戦闘画面共通）
 const gTraps = el("g", { id: "gTraps" }); // [UI 2026-09-05] 罠マーク。配置画面・戦闘画面共通（罠は相手からも見える仕様のため）
+const gTempWalls = el("g", { id: "gTempWalls" }); // [UI 2026-09-20] 建設（クラフター）の一時壁専用マーカー。戦闘再生中のみ使う
 const gMarkers = el("g", { id: "gMarkers" });
 const gDragPreview = el("g", { id: "gDragPreview" }); // [Block C] ドラッグ中プレビュー線（C-2）。renderMarkers()の対象外で独立更新する
 const gBattleUnits = el("g", { id: "gBattleUnits", visibility: "hidden" });
 const gBattleFx = el("g", { id: "gBattleFx" });
 const gCoordLabels = el("g", { id: "gCoordLabels" });
 const gAxis = el("g", { id: "gAxis" });
-svg.append(gBase, gTerritory, gGrid, gAttackRange, gTraps, gMarkers, gDragPreview, gBattleUnits, gBattleFx, gCoordLabels, gAxis);
+svg.append(gBase, gTerritory, gTempWalls, gGrid, gAttackRange, gTraps, gMarkers, gDragPreview, gBattleUnits, gBattleFx, gCoordLabels, gAxis);
 
 const baseFillCells = new Map();   // key -> polygon（壁/空きマス色）
 const territoryCells = new Map();  // key -> polygon（自陣オーバーレイ）
@@ -2605,6 +2617,38 @@ function seedTrapMarkersFromPersistent() {
   for (const [k, owner] of Object.entries(persistentTraps)) {
     const [col, row] = k.split(",").map(Number);
     addTrapMarker(col, row, owner);
+  }
+}
+
+// [UI 2026-09-20] UC要望「建設したときに専用の壁表示を、5,4,3,2,1と変わるものを」への対応。
+// tempWalls自体は戦闘開始時のsimulateBattle()呼び出しで即座にラウンド末尾まで進んでしまう
+// （§実装ノート参照）ため、盤面の色と同じ手法（isWall()を毎tick参照）では正しい途中経過を
+// 再生できない。代わりにwallStatesByTick（tick単位で計算済みの「その時点の残りtickスナップショット」）
+// を再生の情報源にする（reveal/disguiseAsと同じく、ログ・事前計算値だけを頼りにする既存方針を踏襲）
+const tempWallMarkerEls = new Map(); // key(col,row) -> {poly, text}
+function renderTempWallMarkers(activeMap) {
+  for (const k of [...tempWallMarkerEls.keys()]) {
+    if (!activeMap.has(k)) {
+      const m = tempWallMarkerEls.get(k);
+      m.poly.remove(); m.text.remove();
+      tempWallMarkerEls.delete(k);
+    }
+  }
+  for (const [k, remain] of activeMap) {
+    let m = tempWallMarkerEls.get(k);
+    if (!m) {
+      const [col, row] = k.split(",").map(Number);
+      const { x, y } = hexCenter(col, row);
+      const poly = el("polygon", {
+        points: hexCorners(x, y), fill: "var(--temp-wall)", stroke: "var(--temp-wall-edge)",
+        "stroke-width": "2", "stroke-dasharray": "5,3", "pointer-events": "none",
+      });
+      const text = el("text", { x, y: y + 5, "text-anchor": "middle", class: "temp-wall-count", "pointer-events": "none" });
+      gTempWalls.append(poly, text);
+      m = { poly, text };
+      tempWallMarkerEls.set(k, m);
+    }
+    m.text.textContent = remain;
   }
 }
 
@@ -3353,6 +3397,10 @@ let battleResult = null;   // simulateBattle() の戻り値そのもの（正典
 let roundOutcome = null;   // [P6] interpretRoundOutcome()の戻り値（即時終了解釈込みの本当の決着）
 let displayState = null;   // ログを適用しながら進める表示用の状態（initBattleStateの再利用）
 let eventsByTick = [];     // eventsByTick[tick] = そのtickのイベント配列
+// [UI 2026-09-20] 建設の一時壁を再生するための事前計算。wallStatesByTick[tick] = そのtick終了時点で
+// アクティブな一時壁のMap(key -> 残りtick)。tick0はこのラウンド開始時点（前ラウンドからの持ち越し）
+let wallSnapshotAtRoundStart = new Map();
+let wallStatesByTick = [];
 let playbackTick = 0;
 let playbackTimer = null;
 let playbackSpeed = 1;
@@ -3754,6 +3802,7 @@ function stepForward() {
   applyEventsForTick(eventsByTick[playbackTick] || []);
   renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24] 移動に追従して攻撃範囲を更新
   renderBattleBaseHp(); // [UI 2026-09-19] 拠点HPダメージをtickごとに反映
+  renderTempWallMarkers(wallStatesByTick[playbackTick] || wallSnapshotAtRoundStart); // [UI 2026-09-20] 一時壁の残りtickをtickごとに反映
   updateTickLabel();
   if (playbackTick >= lastTick) { pausePlayback(); showBattleResult(); }
 }
@@ -3815,6 +3864,7 @@ function skipToEnd() {
     const [col, row] = k.split(",").map(Number);
     addTrapMarker(col, row, owner);
   }
+  renderTempWallMarkers(wallStatesByTick[lastTick] || wallSnapshotAtRoundStart); // [UI 2026-09-20]
   updateTickLabel();
   showBattleResult();
 }
@@ -3834,6 +3884,7 @@ function restartPlayback() {
   renderAttackRangeOverlay(displayState.units); // [UI 2026-08-24] tick0時点の攻撃範囲を表示
   renderBattleBaseHp(); // [UI 2026-09-19] tick0時点（前ラウンドから引き継いだ拠点HP）を表示
   seedTrapMarkersFromPersistent(); // [UI 2026-09-05] tick0時点＝前ラウンドから引き継いだ罠のみ表示（巻き戻しにも対応）
+  renderTempWallMarkers(wallStatesByTick[0] || wallSnapshotAtRoundStart); // [UI 2026-09-20] tick0時点＝前ラウンドから引き継いだ一時壁のみ表示
   document.getElementById("battleLogFeed").innerHTML = "";
   document.getElementById("battleResultLabel").textContent =
     battleResult.tickCount === 0
@@ -3851,12 +3902,28 @@ function enterBattleMode() {
   const titleEl = document.getElementById("battlePanelTitle");
   titleEl.textContent = `${titleEl.textContent.replace(/\s*🗺.*$/, "")}　🗺 ${MAPS[currentMapId].name}`;
 
+  // [UI 2026-09-20] simulateBattle()はtempWallsをこのラウンドの末尾まで一気に進めてしまうため、
+  // 「ラウンド開始時点（前ラウンドからの持ち越し分）」のスナップショットは呼び出し前に取っておく必要がある
+  wallSnapshotAtRoundStart = new Map(tempWalls);
   battleResult = simulateBattle(units, bases, seed, { traps: persistentTraps, round4: currentRound === 4 }); // [P7] §6-3
   roundOutcome = interpretRoundOutcome(battleResult, units, bases, currentRound === 4); // [P6][P7]
   eventsByTick = [];
   for (const ev of battleResult.log) {
     if (!eventsByTick[ev.tick]) eventsByTick[ev.tick] = [];
     eventsByTick[ev.tick].push(ev);
+  }
+  // [UI 2026-09-20] tick単位の一時壁アクティブ状態を事前計算（simulateBattle内のtempWalls減衰と
+  // 同じアルゴリズムをログから再現。実際のtempWallsはもう末尾まで進んでいるため参照できない）
+  wallStatesByTick = [new Map(wallSnapshotAtRoundStart)];
+  {
+    let cur = new Map(wallSnapshotAtRoundStart);
+    for (let t = 1; t <= battleResult.tickCount; t++) {
+      for (const [k, remain] of cur) { if (remain <= 1) cur.delete(k); else cur.set(k, remain - 1); }
+      for (const ev of (eventsByTick[t] || [])) {
+        if (ev.type === "wallBuilt") cur.set(key(ev.col, ev.row), 5);
+      }
+      wallStatesByTick[t] = new Map(cur);
+    }
   }
 
   battleMode = true;
@@ -3880,6 +3947,10 @@ function exitBattleMode() {
   battleResult = null;
   gBattleUnits.setAttribute("visibility", "hidden");
   gBattleFx.innerHTML = "";
+  // [UI 2026-09-20] 一時壁の残りtickマーカーは戦闘再生専用の表示。配置画面では壁マス自体の色
+  // （buildBoardCells()がisWall()経由で反映）で十分なので、戦闘画面を抜けたら消す
+  gTempWalls.innerHTML = "";
+  tempWallMarkerEls.clear();
   gMarkers.setAttribute("visibility", "visible");
   gDragPreview.setAttribute("visibility", "visible");
   document.getElementById("playbackControls").style.display = "none";
