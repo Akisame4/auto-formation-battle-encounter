@@ -1597,9 +1597,20 @@ function pickRandomPool(seed, count, idPool = CHARACTERS.map(c => c.id)) {
 let currentPool = CHARACTERS.map(c => c.id);
 // [デッキ機能] 現在アクティブなデッキの構成キャラID。loadDecks()完了までは全キャラがデフォルト
 let myDeckCharacterIds = CHARACTERS.map(c => c.id);
+// [UI 2026-09-20] UC要望「前のラウンドで出たキャラ＋2体を出すように」。以前はラウンドごとに
+// デッキから毎回独立に抽選し直しており（6/8/10/12体）、R1で買えたキャラがR2で消えることがあった。
+// R1のみ新規抽選、R2以降は「前ラウンドのプールをそのまま引き継ぎ、デッキの残りから2体追加」に変更
 function regenerateRoundPool(round, seed) {
   const source = (myDeckCharacterIds && myDeckCharacterIds.length) ? myDeckCharacterIds : CHARACTERS.map(c => c.id);
-  currentPool = pickRandomPool(seed, Math.min(ROUND_POOL_SIZE[round], source.length), source);
+  const targetSize = Math.min(ROUND_POOL_SIZE[round], source.length);
+  if (round === 1 || !currentPool || currentPool.length === 0) {
+    currentPool = pickRandomPool(seed, targetSize, source);
+    return;
+  }
+  const remaining = source.filter(id => !currentPool.includes(id));
+  const addCount = Math.max(0, Math.min(targetSize - currentPool.length, remaining.length));
+  const added = pickRandomPool(seed, addCount, remaining);
+  currentPool = [...currentPool, ...added].sort();
 }
 function regenerateRound1Pool(seed) { regenerateRoundPool(1, seed); }
 regenerateRound1Pool(Date.now()); // ページ読み込み時点の初期値（デッキ読込前の暫定値。initApp()のloadDecks()後に再抽選される）
