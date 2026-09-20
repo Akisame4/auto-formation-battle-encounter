@@ -2119,6 +2119,8 @@ function applyPull(state, attacker, target, log, tick) {
 function triggerLinkedAttacks(state, attacker, hitTargets, rng, log, tick) {
   for (const ally of state.units) {
     if (!ally.alive || ally.owner !== attacker.owner || ally.id === attacker.id) continue;
+    // [2026-09-20バランス調整] UC指示「行動力がなくなったら、連携攻撃は発動しない」
+    if (ally.ap <= 0) continue;
     const allyChar = getCharacter(ally.charId);
     const hasMelee = allyChar.skills.includes("近接連携攻撃");
     const hasRanged = allyChar.skills.includes("遠距離連携攻撃");
