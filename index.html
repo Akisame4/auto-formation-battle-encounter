@@ -1323,6 +1323,13 @@ function buildWallsClassic() {
 const MAP2_WALLS_TOP = [
   // 中立地帯の中央分断壁（row9で自己ミラー、row7↔11・row8↔10は自動生成）
   [9, 7], [10, 7], [9, 8], [10, 8], [9, 9], [10, 9],
+  // [2026-09-20] UC要望「左右差ありのMAPはさらに左側の中立地帯に壁をいっぱい」。中央分断壁(col9/10)
+  // より左側(col0〜8)の中立地帯(row7〜9、row10・11は行のみ反転ミラーで自動生成)に、互い違いの
+  // 壁配置（各行1マスおきにずらす）を追加。row単位で全マス塞がないようにして通行自体は残しつつ、
+  // 近接有利レーンとしての障害物密度をさらに上げる。接続性はNode script（BFS）で再検証済み
+  [2, 7], [4, 7], [6, 7], [8, 7],
+  [1, 8], [3, 8], [5, 8], [7, 8],
+  [2, 9], [4, 9], [6, 9], [8, 9],
   // 左レーン（近接有利、障害物多め）
   [1, 1], [2, 1], [6, 1], [7, 1],
   [1, 3], [2, 3], [8, 3],
@@ -1362,8 +1369,11 @@ function setMap(mapId) {
 }
 
 // [2026-09-19] スキル「建設」用の一時壁。key -> 残りtick数。マップの固定壁(walls)とは別に持ち、
-// 5tick経過で自然に消える。ラウンドをまたいでも（新しいsimulateBattle()呼び出しをまたいでも）
-// この変数自体はリセットされないので、tickカウントがそのまま引き継がれる（UC確認済みの仕様）
+// WALL_BUILD_DURATIONtick経過で自然に消える。ラウンドをまたいでも（新しいsimulateBattle()呼び出しを
+// またいでも）この変数自体はリセットされないので、tickカウントがそのまま引き継がれる（UC確認済みの仕様）
+// [2026-09-20バランス調整] UC指示で5→10tickに延長。演出用の事前計算（wallStatesByTick）とも
+// 値がズレないよう、この定数1箇所だけを両方から参照する
+const WALL_BUILD_DURATION = 10;
 let tempWalls = new Map();
 function isWall(col, row) { return walls.has(key(col, row)) || tempWalls.has(key(col, row)); }
 function inBounds(col, row) { return col >= 0 && col < COLS && row >= 0 && row < ROWS; }
@@ -1375,9 +1385,12 @@ function inBounds(col, row) { return col >= 0 && col < COLS && row >= 0 && row <
 // [2026-08-23] マップ縮小(ROWS=19)に伴いP2側をrow29→row18に更新。
 // [2026-09-19] UC要望「拠点の位置を3マス前に」。P1: row0→row3／P2: row18→row15（180度対称は維持）。
 // 旧位置にあった壁(col5,14 / row3・row15)は拠点と重なるためWALLS_HALFから撤去済み
+// [2026-09-20] UC要望「拠点を一つ後ろに下げる」。P1: row3→row2／P2: row15→row16（180度対称維持。
+// 両マップ共通の定数なので両方に反映される）。row2/16はWALLS_HALF・MAP2_WALLS_TOPいずれとも
+// 衝突しないことを確認済み
 const FIXED_BASES = {
-  player1: [{ col: 5, row: 3 }, { col: 14, row: 3 }],
-  player2: [{ col: 5, row: 15 }, { col: 14, row: 15 }],
+  player1: [{ col: 5, row: 2 }, { col: 14, row: 2 }],
+  player2: [{ col: 5, row: 16 }, { col: 14, row: 16 }],
 };
 function resetBasesToFixedPositions() {
   bases.player1 = FIXED_BASES.player1.map(b => ({ ...b }));
@@ -1426,7 +1439,7 @@ const CHARACTERS = [
   { id: "medic", name: "衛生兵", price: 75, hp: 150, atk: 5, ap: 10, skills: ["単体回復20"] },
   { id: "lonewolf", name: "孤高", price: 110, hp: 130, atk: 20, ap: 15, skills: ["孤高"] },
   { id: "hunter", name: "狩人", price: 75, hp: 90, atk: 25, ap: 14, skills: ["移動ボーナス2", "血の匂い"] },
-  { id: "bard", name: "吟遊詩人", price: 80, hp: 70, atk: 5, ap: 15, skills: ["行進曲", "射程ボーナス1"] },
+  { id: "bard", name: "吟遊詩人", price: 80, hp: 70, atk: 5, ap: 15, skills: ["行進曲", "射程ボーナス1", "追従2"] },
   { id: "scout", name: "スカウト", price: 60, hp: 120, atk: 20, ap: 10, skills: ["遠距離連携攻撃", "射程ボーナス1"] },
   { id: "king", name: "王者", price: 200, hp: 250, atk: 25, ap: 20, skills: ["無双"] },
   // [2026-09-19] AFBElist.xlsx更新（UC追記）に基づき6体追加。追従N・移動ボーナスNの具体的な数値は
@@ -1434,9 +1447,9 @@ const CHARACTERS = [
   { id: "tank", name: "タンク", price: 100, hp: 300, atk: 10, ap: 8, skills: [] },
   { id: "ninja", name: "忍者", price: 75, hp: 80, atk: 25, ap: 15, skills: ["変化"] },
   { id: "samurai", name: "侍", price: 70, hp: 100, atk: 20, ap: 14, skills: ["追従2"] },
-  { id: "parrotbard", name: "バード", price: 80, hp: 70, atk: 15, ap: 12, skills: ["身軽", "行進曲"] },
+  { id: "parrotbard", name: "バード", price: 80, hp: 70, atk: 15, ap: 15, skills: ["身軽", "行進曲"] },
   { id: "crafter", name: "クラフター", price: 60, hp: 80, atk: 5, ap: 8, skills: ["建設"] },
-  { id: "fencer", name: "フェンサー", price: 80, hp: 70, atk: 25, ap: 16, skills: ["早業", "移動ボーナス2"] },
+  { id: "fencer", name: "フェンサー", price: 80, hp: 70, atk: 25, ap: 10, skills: ["早業", "移動ボーナス2"] },
 ];
 
 function getBaseCharacter(charId) { return CHARACTERS.find(c => c.id === charId); }
@@ -1536,7 +1549,7 @@ const SKILL_DESCRIPTIONS = {
   "行進曲": "このキャラ自身が行動力を3消費するたび、攻撃範囲内の味方（自分を除く）の行動力+1（1ラウンドにつき5回まで）",
   "血の匂い": "指示は聞かず、常に最も近い相手キャラに最短で近づく",
   "変化": "配置した瞬間、自分が購入済みの他キャラ1体をランダムで選び、以後そのキャラになりすます（敵からは名前・画像・ステータス・スキルまで全て偽装先のものに見える）。攻撃を受けた瞬間に正体が判明する",
-  "建設": "通ったマスに壁を設置する（設置から5tick経過で消滅。ラウンドをまたいでもtick経過はカウントされ続ける）",
+  "建設": "通ったマスに壁を設置する（設置から10tick経過で消滅。ラウンドをまたいでもtick経過はカウントされ続ける）",
   "早業": "「敵を追う」「指定マスへ」など「この場を守る」以外の目的の時、tick内の行動順が最も早くなる（「この場を守る」を選んでいる間は通常通り最後）",
 };
 function skillDescription(skillStr) {
@@ -2233,11 +2246,11 @@ function performAction(state, unit, rng, log, tick) {
       log.push({ tick, type: "trapSet", unitId: unit.id, col: cell.col, row: cell.row, owner: unit.owner });
     }
   }
-  // [2026-09-19] 建設: 通ったマスに5tick持続する壁を設置する（UC確認済み: ラウンドをまたいでも
-  // tickカウントは引き継がれる＝tempWallsはラウンド間でリセットしない一時壁専用の変数を使う）
+  // [2026-09-19] 建設: 通ったマスにWALL_BUILD_DURATIONtick持続する壁を設置する（UC確認済み:
+  // ラウンドをまたいでもtickカウントは引き継がれる＝tempWallsはラウンド間でリセットしない一時壁専用の変数を使う）
   if (char.skills.includes("建設")) {
     for (const cell of traversed) {
-      tempWalls.set(key(cell.col, cell.row), 5);
+      tempWalls.set(key(cell.col, cell.row), WALL_BUILD_DURATION);
       log.push({ tick, type: "wallBuilt", unitId: unit.id, col: cell.col, row: cell.row, owner: unit.owner });
     }
   }
@@ -3454,6 +3467,15 @@ function findDisplayEntity(id) {
   return displayState.units.find(u => u.id === id) || displayState.bases.find(b => b.id === id);
 }
 
+// [バグ修正 2026-09-20] UC報告「タヌキの変化がうまくいってない」。配置画面では相手からdisguiseAsの
+// キャラに見えるよう実装済みだったが、戦闘再生（マーカー・バトルログ）側がこれを一切見ておらず、
+// 開戦した瞬間に全員へ本当の姿が見えてしまっていた（実際に攻撃を受けるまで正体不明、のはずが機能していなかった）。
+// 配置画面の`displayChar`計算と同じ条件をここでも使う
+function battleDisplayCharId(entity) {
+  const isOwn = entity.owner === currentPlayer;
+  return (!isOwn && entity.disguiseAs && !entity.revealed) ? entity.disguiseAs : entity.charId;
+}
+
 function battleColor(owner) { return owner === "player1" ? "var(--p1)" : "var(--p2)"; }
 function battleDark(owner) { return owner === "player1" ? "var(--p1-dark)" : "var(--p2-dark)"; }
 
@@ -3463,10 +3485,11 @@ function createBattleMarker(entity, isBase) {
   const g = el("g", {});
   const circle = el("circle", { cx: x, cy: y, r, fill: battleColor(entity.owner), stroke: battleDark(entity.owner), "stroke-width": "2" });
   const label = el("text", { x, y: y + 3, "text-anchor": "middle", fill: "#fff", "font-size": isBase ? "10" : "8", "font-weight": "bold", "pointer-events": "none" });
-  label.textContent = isBase ? "拠" : getCharacter(entity.charId).name.slice(0, 2);
+  const displayCharId = isBase ? null : battleDisplayCharId(entity); // [バグ修正 2026-09-20] 変化：戦闘中も未発覚のうちは偽装先の姿で表示
+  label.textContent = isBase ? "拠" : getCharacter(displayCharId).name.slice(0, 2);
   g.append(circle, label);
   // [UI 2026-08-25] 拠点以外はキャラ画像を重ねる（画像が無ければlabelの2文字表示のまま）
-  const charImg = isBase ? null : appendCharMarkerImage(g, entity.charId, x, y, r, `b-${entity.id}`);
+  const charImg = isBase ? null : appendCharMarkerImage(g, displayCharId, x, y, r, `b-${entity.id}`);
   const hpBg = el("rect", { x: x - 14, y: y - r - 8, width: "28", height: "4", fill: "#000", opacity: "0.5", rx: "1" });
   const hpFill = el("rect", { x: x - 14, y: y - r - 8, width: "28", height: "4", fill: "#4ade80", rx: "1" });
   const poisonDot = el("circle", { cx: x + r * 0.6, cy: y - r * 0.6, r: "3", fill: "#a855f7", visibility: entity.poisoned ? "visible" : "hidden" });
@@ -3481,6 +3504,19 @@ function updateMarkerHpBar(entity) {
   const ratio = Math.max(0, entity.hp / entity.maxHp);
   m.hpFill.setAttribute("width", (28 * ratio).toFixed(1));
   m.hpFill.setAttribute("fill", ratio > 0.5 ? "#4ade80" : ratio > 0.2 ? "#facc15" : "#ef4444");
+}
+
+// [バグ修正 2026-09-20] 変化：正体判明（revealイベント）の瞬間にマーカーの見た目を偽装先→本当の姿へ
+// 切り替える。createBattleMarker()時点の判定だけでは戦闘中に判明した後も偽装のまま固定されてしまう
+function updateBattleMarkerIdentity(entity) {
+  const m = battleMarkerEls.get(entity.id);
+  if (!m || m.isBase) return;
+  const displayCharId = battleDisplayCharId(entity);
+  m.label.textContent = getCharacter(displayCharId).name.slice(0, 2);
+  if (m.charImg) {
+    m.charImg.img.style.display = "";
+    m.charImg.img.setAttribute("href", charFaceSrc(displayCharId));
+  }
 }
 
 // [UI 2026-09-05] UC要望「行動力が残っているキャラはハイライトを、なくなったキャラは少し暗くして
@@ -3565,7 +3601,8 @@ function entityLabelHtml(id) {
   if (!entity) return String(id);
   const tag = entity.owner === "player1" ? "P1" : "P2";
   const cls = entity.owner === "player1" ? "p1" : "p2";
-  const name = entity.isBase ? "拠点" : getCharacter(entity.charId).name;
+  // [バグ修正 2026-09-20] 変化：バトルログの名前も、正体判明前は相手からは偽装先の名前で見えるようにする
+  const name = entity.isBase ? "拠点" : getCharacter(battleDisplayCharId(entity)).name;
   return `<span class="who ${cls}">${name}${unitIndexSuffix(entity)}(${tag})</span>`;
 }
 
@@ -3681,9 +3718,17 @@ function applyEventsForTick(tickEvents) {
         spawnAttackFlash(findDisplayEntity(ev.attackerId), entity);
         break;
       }
-      case "reveal": { // [2026-09-19] 変化: 攻撃を受けて正体が判明した瞬間の演出（戦闘中は元々素の姿で表示済み）
+      case "reveal": { // [2026-09-19] 変化: 攻撃を受けて正体が判明した瞬間の演出
+        // [バグ修正 2026-09-20] UC報告「タヌキの変化がうまくいってない」。以前はここで
+        // entity.revealedを更新しておらず（戦闘中はどのみち素の姿のまま表示していたため
+        // 不要と誤解していた）、マーカー・バトルログとも開戦直後から本当の姿が見えてしまっていた。
+        // 正体判明の瞬間に初めて偽装→本当の姿へ切り替わるよう修正
         const entity = findDisplayEntity(ev.unitId);
-        if (entity) spawnSkillLabel(entity.col, entity.row, "正体判明");
+        if (entity) {
+          entity.revealed = true;
+          updateBattleMarkerIdentity(entity);
+          spawnSkillLabel(entity.col, entity.row, "正体判明");
+        }
         break;
       }
       case "heal": {
@@ -3871,6 +3916,7 @@ function skipToEnd() {
       m.charImg.img.setAttribute("x", p.x - m.r); m.charImg.img.setAttribute("y", p.y - m.r);
     }
     updateMarkerHpBar(entity);
+    updateBattleMarkerIdentity(entity); // [バグ修正 2026-09-20] 変化：最後まで飛ばした時点の正体判明状態を反映
     if (!entity.alive) m.g.classList.add("death-fade");
     else updateMarkerActivity(entity); // [UI 2026-09-05] 行動力切れユニットの減光
   }
@@ -3952,7 +3998,7 @@ function enterBattleMode() {
     for (let t = 1; t <= battleResult.tickCount; t++) {
       for (const [k, remain] of cur) { if (remain <= 1) cur.delete(k); else cur.set(k, remain - 1); }
       for (const ev of (eventsByTick[t] || [])) {
-        if (ev.type === "wallBuilt") cur.set(key(ev.col, ev.row), 5);
+        if (ev.type === "wallBuilt") cur.set(key(ev.col, ev.row), WALL_BUILD_DURATION);
       }
       wallStatesByTick[t] = new Map(cur);
     }
