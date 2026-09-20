@@ -1450,6 +1450,14 @@ const CHARACTERS = [
   { id: "parrotbard", name: "バード", price: 80, hp: 70, atk: 15, ap: 15, skills: ["身軽", "行進曲"] },
   { id: "crafter", name: "クラフター", price: 60, hp: 80, atk: 5, ap: 8, skills: ["建設"] },
   { id: "fencer", name: "フェンサー", price: 80, hp: 70, atk: 25, ap: 10, skills: ["早業", "移動ボーナス2"] },
+  // [2026-09-20] AFBElist.xlsx更新（旧「まだ検討中」7体分。スキル効果がシートに追記され定義された）に基づき追加
+  { id: "boxer", name: "ボクサー", price: 70, hp: 110, atk: 15, ap: 14, skills: ["ワンツー", "攻撃消費1"] },
+  { id: "gladiator", name: "グラディエーター", price: 85, hp: 180, atk: 25, ap: 13, skills: ["突進"] },
+  { id: "priest", name: "僧侶", price: 100, hp: 100, atk: 5, ap: 12, skills: ["全体回復10", "射程ボーナス2"] },
+  { id: "carrier", name: "キャリアー", price: 70, hp: 100, atk: 15, ap: 16, skills: ["牽引"] },
+  { id: "merchant", name: "マーチャント", price: 65, hp: 60, atk: 10, ap: 8, skills: ["商売"] },
+  { id: "cleaner", name: "クリーナー", price: 60, hp: 70, atk: 10, ap: 13, skills: ["死肉あさり", "射程ボーナス1"] },
+  { id: "scholar", name: "学者", price: 65, hp: 60, atk: 5, ap: 12, skills: ["解析", "射程ボーナス1"] },
 ];
 
 function getBaseCharacter(charId) { return CHARACTERS.find(c => c.id === charId); }
@@ -1465,6 +1473,7 @@ const CHAR_ICON = {
   poisoner: "毒", gatekeeper: "門", ashigaru: "足", medic: "衛",
   lonewolf: "孤", hunter: "狩", bard: "詩", scout: "偵", king: "王",
   tank: "壁", ninja: "忍", samurai: "侍", parrotbard: "歌", crafter: "工", fencer: "剣",
+  boxer: "拳", gladiator: "闘", priest: "僧", carrier: "輸", merchant: "商", cleaner: "掃", scholar: "学",
 };
 // [2026-09-17] trapper/ogreはUCが用意した実ファイル名がcharIdと一致しない（動物モチーフへの
 // 差し替え）ため個別に上書き。trapperは全身・顔とも同じspider_trapper.png（顔専用クロップ無し）。
@@ -1479,6 +1488,9 @@ const CHAR_IMAGE_FILE_OVERRIDE = {
   bard: "fennec_bard.png", scout: "porcupine_scout_2.png", king: "lion_champion.png",
   tank: "elephant_tank.png", ninja: "tanuki_ninja.png", samurai: "shiba_samurai.png",
   parrotbard: "parrot_bard.png", crafter: "beaver_crafter.png", fencer: "leopard_fencer.png",
+  boxer: "kangaroo_boxer.png", gladiator: "rhino_gladiator.png", priest: "giraffe_monk.png",
+  carrier: "horse_carrier.png", merchant: "monkey_merchant.png", cleaner: "crow_cleaner.png",
+  scholar: "redpanda_scholar.png",
 };
 const CHAR_FACE_FILE_OVERRIDE = {
   trapper: "spider_trapper.png", poisoner: "snake_poisoner.png",
@@ -1487,6 +1499,9 @@ const CHAR_FACE_FILE_OVERRIDE = {
   bard: "fennec_bard.png", scout: "porcupine_scout_1.png", king: "lion_champion.png",
   tank: "elephant_tank.png", ninja: "tanuki_ninja.png", samurai: "shiba_samurai.png",
   parrotbard: "parrot_bard.png", crafter: "beaver_crafter.png", fencer: "leopard_fencer.png",
+  boxer: "kangaroo_boxer.png", gladiator: "rhino_gladiator.png", priest: "giraffe_monk.png",
+  carrier: "horse_carrier.png", merchant: "monkey_merchant.png", cleaner: "crow_cleaner.png",
+  scholar: "redpanda_scholar.png",
 };
 function charImageSrc(charId) {
   const file = CHAR_IMAGE_FILE_OVERRIDE[charId] || `${charId}.png`;
@@ -1551,6 +1566,12 @@ const SKILL_DESCRIPTIONS = {
   "変化": "配置した瞬間、自分が購入済みの他キャラ1体をランダムで選び、以後そのキャラになりすます（敵からは名前・画像・ステータス・スキルまで全て偽装先のものに見える）。攻撃を受けた瞬間に正体が判明する",
   "建設": "通ったマスに壁を設置する（設置から10tick経過で消滅。ラウンドをまたいでもtick経過はカウントされ続ける）",
   "早業": "「敵を追う」「指定マスへ」など「この場を守る」以外の目的の時、tick内の行動順が最も早くなる（「この場を守る」を選んでいる間は通常通り最後）",
+  "ワンツー": "攻撃時、同じ相手に通常攻撃を2回分与える（行動力消費は通常の攻撃と同じ1回分。それぞれ独立した攻撃として毒・押し込み等の付随効果も判定する）",
+  "突進": "指示は聞かず、常に最も近い相手拠点に最短で近づく",
+  "牽引": "移動するたび、自分の攻撃範囲にいる味方から1体をランダムで選び、移動先の隣接マスへ行動力消費なしで一緒に移動させる",
+  "商売": "攻撃するたびに、次のラウンドで得られるクレジットが20増える（そのラウンド限りの一時ボーナス）",
+  "死肉あさり": "自分の攻撃範囲にいる敵キャラが倒れるたび、行動力を1・HPを20回復する",
+  "解析": "自分の攻撃範囲にいる味方キャラが、射程ボーナスNを持つ敵キャラから受けるダメージを半分にする（最低5ダメージは通る）",
 };
 function skillDescription(skillStr) {
   const m = skillStr.match(/^(.*?)(\d+)$/);
@@ -1827,6 +1848,7 @@ function initBattleState(unitsInput, basesInput, options) {
       disguiseAs: u.disguiseAs || null, revealed: !!u.revealed, // [2026-09-19] 変化
       apSpentTotal: 0, healTriggerCounter: 0, followUsed: 0,
       marchTriggerCounter: 0, marchUsedCount: 0,
+      merchantBonusStacks: 0, // [2026-09-20] 商売: ラウンドごとにリセットする一時カウンタ（advanceToNextRound()で読み取って加算）
       isBase: false, alive: true,
     };
   });
@@ -1977,6 +1999,11 @@ function computeGoal(state, unit, rng) {
     const enemies = state.units.filter(u => u.alive && u.owner !== unit.owner);
     return nearestByHexDistance(unit, enemies, rng);
   }
+  // [2026-09-20] 突進: 指示を無視し、常に最も近い相手拠点へ最短で近づく（rush指示の目的地計算を流用）
+  if (getCharacter(unit.charId).skills.includes("突進")) {
+    const enemyBases = state.bases.filter(b => b.alive && b.owner !== unit.owner);
+    return nearestByHexDistance(unit, enemyBases, rng);
+  }
   if (unit.purpose === "chase") {
     const enemies = state.units.filter(u => u.alive && u.owner !== unit.owner);
     return nearestByHexDistance(unit, enemies, rng);
@@ -2010,6 +2037,19 @@ function applyDamage(state, target, dmg, log, tick, attacker) {
   if (target.hp <= 0) {
     target.alive = false;
     log.push({ tick, type: target.isBase ? "baseDestroyed" : "death", unitId: target.id });
+    // [2026-09-20] 死肉あさり: 倒れたキャラ（拠点は対象外）が自分の攻撃範囲にいた場合、
+    // 敵側（死んだキャラの所有者と異なる陣営）の死肉あさり持ち全員がそれぞれ独立に回復する
+    if (!target.isBase) {
+      for (const scavenger of state.units) {
+        if (!scavenger.alive || scavenger.owner === target.owner) continue;
+        if (!getCharacter(scavenger.charId).skills.includes("死肉あさり")) continue;
+        if (!isInAttackRange(scavenger, { col: target.col, row: target.row })) continue;
+        scavenger.ap += 1;
+        const healAmt = Math.min(20, scavenger.maxHp - scavenger.hp);
+        if (healAmt > 0) scavenger.hp += healAmt;
+        log.push({ tick, type: "scavenge", unitId: scavenger.id, apAmount: 1, hpAmount: healAmt });
+      }
+    }
   }
   return actualDmg;
 }
@@ -2021,6 +2061,13 @@ function resolveAttack(state, attacker, target, rng, log, tick, opts) {
   let dmg = o.dmgOverride != null ? o.dmgOverride : effectiveAtk(state, attacker);
   if (target.isBase && attackerChar.skills.includes("拠点破壊")) dmg += 100;
   if (!target.isBase && target.poisoned) dmg += 10;
+  // [2026-09-20] 解析: 攻撃者が射程ボーナスN持ちの場合、対象の攻撃範囲内にいる解析持ちの
+  // 味方1体でも存在すれば被ダメージを半減（下限5、UC確認済み）
+  if (!target.isBase && attackerChar.skills.some(s => s.startsWith("射程ボーナス"))) {
+    const protectedByScholar = state.units.some(u => u.alive && u.owner === target.owner &&
+      getCharacter(u.charId).skills.includes("解析") && isInAttackRange(u, { col: target.col, row: target.row }));
+    if (protectedByScholar) dmg = Math.max(5, Math.floor(dmg / 2));
+  }
 
   applyDamage(state, target, dmg, log, tick, attacker);
   if (!target.alive) {
@@ -2196,10 +2243,21 @@ function performAction(state, unit, rng, log, tick) {
       const t = pickTarget(targets, unit, rng);
       hitTargets = [t];
       resolveAttack(state, unit, t, rng, log, tick, {});
+      // [2026-09-20] ワンツー: 同じ相手に通常攻撃をもう1回、独立した攻撃として発動（UC確認済み。
+      // 行動力消費は増えない。1発目で対象が倒れていれば2発目は撃たない）
+      if (char.skills.includes("ワンツー") && t.alive) {
+        resolveAttack(state, unit, t, rng, log, tick, {});
+      }
     }
     unit.ap -= cost;
     unit.apSpentTotal += cost;
     log.push({ tick, type: "attack", unitId: unit.id, targetIds: hitTargets.map(t => t.id), apCost: cost });
+    // [2026-09-20] 商売: 自分の攻撃1回につき、次ラウンドのクレジット+20を積み立てる
+    // （advanceToNextRound()でこのラウンド終了時に一括加算。ラウンドを跨いで累積はしない）
+    if (char.skills.includes("商売")) {
+      unit.merchantBonusStacks = (unit.merchantBonusStacks || 0) + 1;
+      log.push({ tick, type: "merchantBonus", unitId: unit.id, amount: 20 });
+    }
     triggerLinkedAttacks(state, unit, hitTargets, rng, log, tick);
     triggerHealAura(state, unit, log, tick);
     triggerMarch(state, unit, log, tick);
@@ -2231,6 +2289,15 @@ function performAction(state, unit, rng, log, tick) {
   const dest = path[steps - 1];
   const traversed = path.slice(0, steps);
 
+  // [2026-09-20] 牽引: 移動する前（自分がまだ元の位置にいる時点）の攻撃範囲内から、
+  // 一緒に連れて行く味方をランダムで1体選んでおく（UC確認済み: 対象のAP消費なし）
+  let towAlly = null;
+  if (char.skills.includes("牽引")) {
+    const towCandidates = state.units.filter(a => a.alive && a.owner === unit.owner && a.id !== unit.id &&
+      isInAttackRange(unit, { col: a.col, row: a.row }));
+    if (towCandidates.length > 0) towAlly = towCandidates[Math.floor(rng() * towCandidates.length)];
+  }
+
   const cost = 1 + trapSurcharge;
   if (!convertHpForAp(state, unit, cost, log, tick)) return; // [P7] R4: 変換の代償で死亡したら移動不発
   unit.ap -= cost;
@@ -2252,6 +2319,20 @@ function performAction(state, unit, rng, log, tick) {
     for (const cell of traversed) {
       tempWalls.set(key(cell.col, cell.row), WALL_BUILD_DURATION);
       log.push({ tick, type: "wallBuilt", unitId: unit.id, col: cell.col, row: cell.row, owner: unit.owner });
+    }
+  }
+
+  // [2026-09-20] 牽引: 移動先の隣接マスの空きを探し、選んでおいた味方をそこへ無償で移動させる
+  // （空きが無ければ発動しない）
+  if (towAlly) {
+    const towDest = neighborsOf(dest.col, dest.row).find(n =>
+      inBounds(n.col, n.row) && !isWall(n.col, n.row) && !isOccupied(state, n.col, n.row, towAlly.id));
+    // [バグ修正] towAlly自身がいるマスも「占有されていない（自分除外）」候補に含まれてしまうため、
+    // 実際に位置が変わる場合のみ移動・ログ出力する（変わらない場合は何も起きていないログが出てしまう）
+    if (towDest && (towDest.col !== towAlly.col || towDest.row !== towAlly.row)) {
+      const towFrom = { col: towAlly.col, row: towAlly.row };
+      towAlly.col = towDest.col; towAlly.row = towDest.row;
+      log.push({ tick, type: "towMove", unitId: towAlly.id, by: unit.id, from: towFrom, to: towDest });
     }
   }
 
@@ -3577,6 +3658,7 @@ const EVENT_LABELS = {
   marchBoost: "行進曲",
   reveal: "正体判明",
   wallBuilt: "壁設置",
+  towMove: "牽引移動", scavenge: "死肉あさり", merchantBonus: "商売発動",
 };
 
 // [UI 2026-09-06] UC報告「ログを見ると同じtickで同じ名前のキャラが移動と攻撃を両方していて
@@ -3619,6 +3701,9 @@ const SKILL_CARD_NAME = {
   musouRecover: () => "無双",
   marchBoost: () => "行進曲",
   wallBuilt: () => "建設",
+  towMove: () => "牽引",
+  scavenge: () => "死肉あさり",
+  merchantBonus: () => "商売",
 };
 
 function appendLogLine(ev) {
@@ -3785,6 +3870,34 @@ function applyEventsForTick(tickEvents) {
         // 戦闘中はラベル表示のみ（罠と違って専用マーカー画像は用意していない）
         spawnSkillLabel(ev.col, ev.row, "建設");
         playSE("skill");
+        break;
+      }
+      case "towMove": { // [2026-09-20] 牽引: 対象を移動先の隣接マスへ動かす演出
+        const entity = findDisplayEntity(ev.unitId);
+        if (entity) {
+          entity.col = ev.to.col; entity.row = ev.to.row;
+          moveMarkerTo(entity, duration);
+          spawnSkillLabel(entity.col, entity.row, "牽引");
+        }
+        playSE("skill");
+        break;
+      }
+      case "scavenge": { // [2026-09-20] 死肉あさり: 行動力・HPの回復を反映
+        const entity = findDisplayEntity(ev.unitId);
+        if (entity) {
+          entity.ap += ev.apAmount;
+          entity.hp = Math.min(entity.maxHp, entity.hp + ev.hpAmount);
+          updateMarkerActivity(entity);
+          updateMarkerHpBar(entity);
+          spawnFloatingNumber(entity, `+${ev.hpAmount}`, "#4ade80");
+          spawnSkillLabel(entity.col, entity.row, "死肉あさり");
+        }
+        playSE("skill");
+        break;
+      }
+      case "merchantBonus": { // [2026-09-20] 商売: 次ラウンドのクレジット積み立てを可視化
+        const entity = findDisplayEntity(ev.unitId);
+        if (entity) spawnFloatingNumber(entity, `+${ev.amount}cr(次R)`, "#ffd479");
         break;
       }
       default: break; // stay/purposeChange は状態変化なし（ログのみ）
@@ -4138,6 +4251,21 @@ function applyEventHeadless(entityById, ev) {
       if (entity) entity.revealed = true;
       break;
     }
+    case "towMove": { // [2026-09-20] 牽引
+      const entity = entityById.get(ev.unitId);
+      if (entity) { entity.col = ev.to.col; entity.row = ev.to.row; }
+      break;
+    }
+    case "scavenge": { // [2026-09-20] 死肉あさり
+      const entity = entityById.get(ev.unitId);
+      if (entity) { entity.ap += ev.apAmount; entity.hp = Math.min(entity.maxHp, entity.hp + ev.hpAmount); }
+      break;
+    }
+    case "merchantBonus": { // [2026-09-20] 商売: このラウンド終了時にadvanceToNextRound()が読み取るスタック数
+      const entity = entityById.get(ev.unitId);
+      if (entity) entity.merchantBonusStacks = (entity.merchantBonusStacks || 0) + 1;
+      break;
+    }
     default: break; // linkedAttack/stay/purposeChangeは盤面状態を変えない（P4のapplyEventsForTickと同じ扱い）
   }
 }
@@ -4251,6 +4379,14 @@ function advanceToNextRound() {
   // 勝者+200ボーナスを撤廃。繰越(既存値)+基礎額のみになった（§6-2・§7の記載も合わせて更新）
   for (const p of ["player1", "player2"]) {
     credits[p] += roundBaseCredits;
+  }
+  // [2026-09-20] 商売: このラウンド中に商売持ちが行った攻撃回数×20を、次ラウンドのクレジットに
+  // 一時ボーナスとして加算する（UC確認済み: そのラウンド限りで、以降の基礎額自体は変わらない）
+  for (const p of ["player1", "player2"]) {
+    const merchantBonus = outcome.units
+      .filter(u => u.owner === p)
+      .reduce((sum, u) => sum + (u.merchantBonusStacks || 0) * 20, 0);
+    credits[p] += merchantBonus;
   }
   // [バグ修正 2026-09-19] UC報告「デッキに入っていないキャラも入っちゃってる」。以前はR2以降
   // `currentPool = CHARACTERS.map(...)`で全キャラを無条件表示しており、デッキ外のキャラも
