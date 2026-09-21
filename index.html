@@ -269,6 +269,8 @@
   .match-result-modal.lose .match-result-title { color: #ef8b6c; }
   .match-result-modal.draw .match-result-title { color: var(--text-dim); }
   .match-result-sub { font-size: 0.86em; color: var(--text-dim); margin-bottom: 24px; }
+  /* [UI 2026-09-20] 再戦の申し込み/受け入れハンドシェイクの状態表示 */
+  .match-result-rematch-status { font-size: 0.84em; color: var(--accent); margin: -14px 0 16px; }
   .match-result-actions { display: flex; flex-direction: column; gap: 10px; }
   .match-result-actions .btn-primary-lg { width: 100%; }
   .match-result-actions .close-btn { width: 100%; }
@@ -984,8 +986,11 @@
     <div class="match-result-modal" id="matchResultModal">
       <div class="match-result-title" id="matchResultTitle">勝利</div>
       <div class="match-result-sub" id="matchResultSub"></div>
+      <div class="match-result-rematch-status" id="matchResultRematchStatus" style="display:none;"></div>
       <div class="match-result-actions">
         <button id="rematchBtn" class="btn-primary-lg">再戦する</button>
+        <button id="acceptRematchBtn" class="btn-primary-lg" style="display:none;">再戦を受け入れる</button>
+        <button id="cancelRematchBtn" class="close-btn" style="display:none;">申し込みを取り消す</button>
         <button id="goHomeBtn" class="close-btn">ホームに戻る</button>
       </div>
     </div>
@@ -4053,6 +4058,7 @@ function showMatchResultPopup(winner, reasonLabel) {
   modal.className = `match-result-modal ${resultKind}`;
   document.getElementById("matchResultSub").textContent = `${reasonLabel}による決着`;
   document.getElementById("matchResultScrim").classList.add("open");
+  updateMatchResultButtons(); // [UI 2026-09-20] 再戦申し込み/受け入れボタンの表示を開いた時点の状態に合わせる
   playSE(resultKind); // [UI 2026-09-19] win/lose/drawの名前がそのままSE_PRESETSのキーと一致する
 }
 
@@ -4580,6 +4586,16 @@ let myReady = false;
 let opponentReady = false;
 let opponentOnline = false;
 let lobbyPhase = "entry"; // "entry"（未参加） | "inRoom"（自分だけ参加） | "matched"（両者揃った演出中） | "hidden"（本編表示中）
+// [バグ修正 2026-09-20] UC報告「再戦するとバグりやすい、ラウンドが合わなかったりする」への対応。
+// 以前は両者が「再戦する」を独立にクリックし、それぞれ自分のresetGameState()＋
+// status:"placing"書き込みを行っていたが、片方の書き込みだけが先に反映されると、
+// もう片方の古いready/古いplacements（前の試合の拠点・ユニット・クレジット等）が
+// 残ったまま「両者ready」判定が成立してしまい、古いデータで開戦する競合が起き得た。
+// 「申し込む→受け入れる」の一方向ハンドシェイクにし、受け入れ側の1回のupdate()だけが
+// 新しい試合の起点になるようにする。matchCountを両者で監視し、変化を検知した側が
+// それぞれ自分でresetGameState()する（決定論的リセットという既存方針は維持）
+let latestRoomData = null; // handleRoomUpdate()で受け取った最新のルームデータ（他のUIハンドラからも参照する）
+let lastSeenMatchCount = null; // nullのうちは「まだ一度も観測していない」＝入室直後の初期読み込みでは再戦リセットを発火させない
 
 function lobbyMsg(text) { document.getElementById("lobbyMsg").textContent = text; }
 
@@ -4674,6 +4690,7 @@ function setOnlineModeUI(active) {
 function handleRoomUpdate(snap) {
   const data = snap.val();
   if (!data) { lobbyMsg("ルームが削除されました。"); leaveRoomLocal(); return; }
+  latestRoomData = data; // [2026-09-20] 再戦ボタンなど他のUIハンドラからも最新のルームデータを参照できるようにする
 
   // [UI 2026-09-19] マップ追加。ホストが作成時に書き込んだmapIdをゲスト（・再接続時は自分自身も）に
   // 反映する。ルーム作成前のスナップショットにはmapIdが無いこともあるためデフォルトclassicにフォールバック
@@ -4693,6 +4710,22 @@ function handleRoomUpdate(snap) {
     showLobbyScreen("C");
     setTimeout(() => { if (lobbyPhase === "matched") { lobbyPhase = "hidden"; hideLobbyScreen(); } }, 1100);
   }
+
+  // [バグ修正 2026-09-20] 再戦の同期ずれ対策。matchCountの変化＝「相手の再戦の申し込みを自分が
+  // 受け入れた、または相手が受け入れた」という単一の書き込みイベントを両クライアントが観測した
+  // 合図として使い、それぞれ自分でresetGameState()する。入室直後の初回読み込み（lastSeenMatchCount
+  // がnull）では発火させない
+  const matchCount = data.matchCount || 0;
+  if (lastSeenMatchCount === null) {
+    lastSeenMatchCount = matchCount;
+  } else if (matchCount !== lastSeenMatchCount) {
+    lastSeenMatchCount = matchCount;
+    document.getElementById("matchResultScrim").classList.remove("open");
+    resetGameState();
+    showStatus("再戦が成立しました。配置フェイズです。");
+    render();
+  }
+  updateMatchResultButtons();
 
   // ホスト側だけが両者ready検出時にseedを発行し開戦させる（書き込み競合を避けるための単独責任）
   if (myRole === "player1" && myReady && opponentReady && data.status !== "battle") {
@@ -4750,6 +4783,7 @@ function leaveRoomLocal() {
   if (unsubscribeRoom) { unsubscribeRoom(); unsubscribeRoom = null; }
   roomCode = null; myRole = null; roomRef = null;
   myReady = false; opponentReady = false; opponentOnline = false;
+  latestRoomData = null; lastSeenMatchCount = null; // [2026-09-20] 次に入室した時に初回読み込みとして正しく扱われるようにする
   clearSavedRoom();
   setOnlineModeUI(false);
   currentPlayer = document.querySelector('#playerSelect input:checked').value;
@@ -4835,31 +4869,81 @@ document.getElementById("leaveRoomBtn").addEventListener("click", () => {
   leaveRoomLocal();
 });
 
-// [UI 2026-09-05] 試合終了ポップアップの「再戦する」「ホームに戻る」。オンライン中は両者が同じ操作を
-// 独立に行う設計（既存のラウンド進行と同じ思想）。決定論なので両者が同じ初期状態に収束する
+// [UI 2026-09-05→2026-09-20改訂] 試合終了ポップアップの「再戦する」「ホームに戻る」。
+// [バグ修正 2026-09-20] UC報告「再戦するとバグりやすい、ラウンドが合わなかったりする」。
+// 以前は両者が「再戦する」を独立にクリックし、それぞれ自分のresetGameState()＋
+// status:"placing"書き込みを行っていた（決定論だから両者が同じ状態に収束する、という既存の
+// ラウンド進行と同じ発想）。しかしラウンド進行はFirebase側の`placements`を都度書き込み直す
+// 前提の上に成り立っており、再戦ではその再構築が無く、片方の書き込みが先に反映されると
+// もう片方の古いready・古いplacements（前の試合の拠点・ユニット・クレジット等）が残ったまま
+// 「両者ready」判定が成立し、古いデータで開戦してしまう競合があった。
+// 「申し込む→受け入れる」の一方向ハンドシェイクに変更し、受け入れ側の1回のupdate()だけが
+// placements自体をまるごとクリアして新しい試合の起点になるようにした（オフライン単体テスト
+// ＝roomCodeが無い時は、従来通り即時リセットのまま）
 document.getElementById("rematchBtn").addEventListener("click", () => {
-  document.getElementById("matchResultScrim").classList.remove("open");
-  resetGameState();
-  // [バグ修正 2026-09-05] advanceToNextRound()と同じ理由で、status/readyは1回のupdate()にまとめて
-  // アトミックに反映する（中間状態を観測させない）
-  if (roomCode && myRole) {
-    update(ref(db, `rooms/${roomCode}`), {
-      status: "placing",
-      [`placements/${myRole}/ready`]: false,
-    }).catch(() => {});
+  if (!roomCode || !myRole) {
+    // オフライン（開発用ローカルテスト）は即時リセットのまま
+    document.getElementById("matchResultScrim").classList.remove("open");
+    resetGameState();
+    showStatus("再戦を開始します。配置フェイズです。");
+    render();
+    return;
   }
-  showStatus("再戦を開始します。配置フェイズです。");
-  render();
+  update(ref(db, `rooms/${roomCode}`), { rematchRequestBy: myRole }).catch(() => {});
+});
+document.getElementById("cancelRematchBtn").addEventListener("click", () => {
+  if (!roomCode) return;
+  update(ref(db, `rooms/${roomCode}`), { rematchRequestBy: null }).catch(() => {});
+});
+document.getElementById("acceptRematchBtn").addEventListener("click", () => {
+  if (!roomCode || !myRole) return;
+  const nextMatchCount = ((latestRoomData && latestRoomData.matchCount) || 0) + 1;
+  // [バグ修正 2026-09-20] placements自体をnullで丸ごと消し、両者分の古い拠点・ユニット・
+  // クレジット・ready状態を残さないようにする（1回のupdate()でアトミックに反映）
+  update(ref(db, `rooms/${roomCode}`), {
+    status: "placing",
+    seed: null,
+    placements: null,
+    rematchRequestBy: null,
+    matchCount: nextMatchCount,
+  }).catch(() => {});
 });
 document.getElementById("goHomeBtn").addEventListener("click", () => {
   document.getElementById("matchResultScrim").classList.remove("open");
   if (roomCode && myRole) {
     const onlineField = myRole === "player1" ? "hostOnline" : "guestOnline";
-    update(ref(db, `rooms/${roomCode}`), { [onlineField]: false }).catch(() => {});
+    update(ref(db, `rooms/${roomCode}`), { [onlineField]: false, rematchRequestBy: null }).catch(() => {});
   }
   resetGameState();
   leaveRoomLocal();
 });
+
+// [UI 2026-09-20] 再戦の申し込み/受け入れボタンの表示切り替え。試合終了ポップアップを開いた時、
+// および相手の操作でルームデータが変化した時（handleRoomUpdate内）の両方から呼ぶ
+function updateMatchResultButtons() {
+  const rematchBtn = document.getElementById("rematchBtn");
+  const acceptBtn = document.getElementById("acceptRematchBtn");
+  const cancelBtn = document.getElementById("cancelRematchBtn");
+  const statusEl = document.getElementById("matchResultRematchStatus");
+  if (!roomCode || !myRole) {
+    // オフライン: 従来通りシンプルな「再戦する」ボタンのみ
+    rematchBtn.style.display = ""; rematchBtn.textContent = "再戦する";
+    acceptBtn.style.display = "none"; cancelBtn.style.display = "none"; statusEl.style.display = "none";
+    return;
+  }
+  const oppRole = myRole === "player1" ? "player2" : "player1";
+  const requestedBy = latestRoomData && latestRoomData.rematchRequestBy;
+  if (requestedBy === oppRole) {
+    rematchBtn.style.display = "none"; cancelBtn.style.display = "none";
+    acceptBtn.style.display = ""; statusEl.style.display = ""; statusEl.textContent = "相手が再戦を希望しています。";
+  } else if (requestedBy === myRole) {
+    rematchBtn.style.display = "none"; acceptBtn.style.display = "none";
+    cancelBtn.style.display = ""; statusEl.style.display = ""; statusEl.textContent = "再戦を申し込みました。相手の応答を待っています…";
+  } else {
+    rematchBtn.style.display = ""; rematchBtn.textContent = "再戦を申し込む";
+    acceptBtn.style.display = "none"; cancelBtn.style.display = "none"; statusEl.style.display = "none";
+  }
+}
 
 // ページ読み込み時、直前に参加していたルームが残っていれば自動復帰する（[P5] 切断・リロード対策）。
 // [デッキ機能] 復帰の場合はデッキ画面を経由せずそのまま復帰処理へ入る。新規セッションの場合のみ
