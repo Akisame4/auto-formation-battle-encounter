@@ -299,7 +299,7 @@
      [UI 2026-09-06追記] 選択時だけ2カラムに切り替える実装だと、パネル出現のたびに盤面側の
      カラム幅が変わって盤面（.col-boardの中央寄せ）が左右にずれてしまうとUC指摘。常に2カラムを
      確保しておき、パネルの中身をdisplay:noneで隠すだけにすることで、盤面の位置を固定した */
-  .placement-body { display: grid; grid-template-columns: 1fr 240px; }
+  .placement-body { display: grid; grid-template-columns: 1fr 300px; }
   @media (max-width: 900px) { .placement-body { grid-template-columns: 1fr; } }
 
   .inspector-strip {
@@ -918,8 +918,10 @@
         </div>
         <svg id="board"></svg>
       </div>
-      <div class="inspector-strip" id="unitEditPanel" style="display:none;">
-        <div id="unitEditContent"></div>
+      <div class="inspector-strip" id="unitEditPanel">
+        <div id="unitEditContent">
+          <div class="hint">キャラを選択すると、ここに指示・向きの設定が表示されます。</div>
+        </div>
       </div>
     </div>
 
@@ -3167,12 +3169,19 @@ function renderUnitEditPanel() {
   const panel = document.getElementById("unitEditPanel");
   const content = document.getElementById("unitEditContent");
   const unit = units.find(u => u.id === selectedUnitId);
-  if (!unit) { panel.style.display = "none"; return; }
   // [UI 2026-09-06] UC要望「指示は盤面の右側のアイドルスペースに」への対応。以前は購入待ちキューの上に
   // 全幅の横帯として表示していたが、盤面の右に空きスペースがあったため、そこにサイドパネルとして
   // 表示するよう変更。[UI 2026-09-06追記] `.placement-body`のカラム数は常に固定（CSS側）にし、
   // ここではパネルの表示/非表示だけを切り替える（盤面がずれないように）
+  // [UI 2026-09-22] UC要望「戦闘画面のように盤面を左寄せにして右に常時パネルを置きたい」への対応。
+  // 戦闘画面（.battle-side）は常にログパネルが表示され続けるのに対し、配置画面はユニット未選択時に
+  // パネルごと非表示にしていたため、盤面が全幅表示に見えていた。パネル自体は常に表示したままにし、
+  // 未選択時はプレースホルダー文言を出すことで、戦闘画面と同じ「盤面＋常時右パネル」の見た目に揃えた
   panel.style.display = "block";
+  if (!unit) {
+    content.innerHTML = `<div class="hint">キャラを選択すると、ここに指示・向きの設定が表示されます。</div>`;
+    return;
+  }
   const char = getCharacter(unit.charId);
   const ownerLabel = unit.owner === "player1" ? "プレイヤー1" : "プレイヤー2";
   const curHp = unit.hp != null ? unit.hp : char.hp;
