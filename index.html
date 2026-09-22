@@ -441,6 +441,11 @@
     border: 1px solid var(--grid-line);
   }
   .hex-clickable { cursor: pointer; touch-action: none; } /* [Block B] タッチドラッグ中のページスクロール抑止 */
+  /* [2026-09-21] UC報告「スマホで指示線がひけない（ページや盤面がスクロール/ズームしてしまう）」対応。
+     Safari/iOSはtouch-actionをSVG内部の図形要素（polygon等）には適用しない既知の制限があり、
+     上のhex-clickable側の設定だけでは効かない端末があった。SVGルート要素（#board）はHTML側の
+     置換要素として扱われtouch-actionが効くため、そちらにも同じ指定を重ねて確実に抑止する */
+  #board { touch-action: none; }
   .hex-clickable:hover { stroke: #fff; stroke-width: 1.5; }
   svg text.coord-label {
     fill: var(--text-dim);
