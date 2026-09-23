@@ -828,8 +828,7 @@
       <ul>
         <li><b>空きマスで離す</b> — そのマスまで移動します（<b>指定マスへ向かう</b>）。線が曲がっていれば曲がり角を経由して進みます。到着後は「この場を守る」に切り替わります。<b>敵拠点の近くで離した場合も同じ扱い</b>です — 到着後、拠点が攻撃範囲に入っていれば自動的に攻撃し続けます</li>
         <li><b>自分自身の上に戻して離す</b> — <b>この場を守る</b>。その場から動きません。攻撃範囲に敵が入れば通常通り攻撃します</li>
-        <li><b>敵キャラの上で離す</b> — <b>敵キャラを積極的に追う</b>。常にそのキャラ（が倒れた後は一番近い敵キャラ）を追いかけます</li>
-        <li><b>自分の別のキャラの上で離す</b> — ドラッグ元のキャラの今の指示を、そのキャラにコピーします</li>
+        <li><b>味方・敵キャラの上で離す</b> — 空きマスと同じく、そのマスへ移動します（<b>指定マスへ向かう</b>）。そのマスにキャラが立ったままなら、手前で止まります</li>
       </ul>
 
       <h3>クレジット</h3>
@@ -3508,7 +3507,7 @@ function applyDragInstruction(unit, path, release) {
   const char = getCharacter(unit.charId);
   // [Block C] ドラッグ元のキャラを選択状態にしておく。gotoならその場で確定線が見える（C-1: 選択時のみ表示）
   selectedUnitId = unit.id;
-  playSE("drag"); // [UI 2026-09-19] 指示確定（guard/chase/goto/コピーいずれの場合も1回だけ鳴らす）
+  playSE("drag"); // [UI 2026-09-19] 指示確定（guard/gotoいずれの場合も1回だけ鳴らす）
 
   if (release.col === unit.col && release.row === unit.row) {
     unit.purpose = "guard";
@@ -3518,22 +3517,10 @@ function applyDragInstruction(unit, path, release) {
     return;
   }
 
-  const targetUnit = unitAt(release.col, release.row);
-  if (targetUnit && targetUnit.id !== unit.id) {
-    if (targetUnit.owner !== unit.owner) {
-      unit.purpose = "chase";
-      unit.waypoints = null;
-      showStatus(`${char.name}の指示を「敵キャラを積極的に追う」に設定しました。`);
-    } else {
-      targetUnit.purpose = unit.purpose;
-      targetUnit.waypoints = unit.waypoints ? unit.waypoints.map(w => ({ ...w })) : null;
-      showStatus(`${char.name}の指示を${getCharacter(targetUnit.charId).name}にコピーしました。`);
-    }
-    render();
-    return;
-  }
-
-  // 空きマス（拠点マス含む）→ 指定マスへ向かう。曲がり角を経由点として抽出する
+  // [2026-09-23] UC要望「味方に合わせると指示がコピーされるのはいらない、味方の位置に行きたいこともある」
+  // 「敵の場所にも指示を出せるように」への対応。味方の上＝指示コピー／敵の上＝chaseの分岐を廃止し、
+  // 自分自身以外のマス（空きマス・拠点マス・味方や敵が立っているマス）はすべて「指定マスへ向かう」に統一
+  // 空きマス・拠点マス・キャラのいるマス → 指定マスへ向かう。曲がり角を経由点として抽出する
   const bends = extractWaypoints(path);
   unit.purpose = "goto";
   unit.waypoints = [...bends, { col: release.col, row: release.row }];
