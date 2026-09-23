@@ -348,18 +348,33 @@
   /* [UI 2026-09-19] UC要望「戦闘中にも拠点のHPが見えるようにしてほしい」への対応。
      .base-hp-group自体は既存のflexスタイルをそのまま流用し、タイトル下に折り返して表示する */
   .battle-topbar .base-hp-group { margin-top: 8px; flex-wrap: wrap; }
-  .battle-body { display: grid; grid-template-columns: 1fr 300px; }
+  /* [UI 2026-09-23] UC要望「ログを右側に大きく、再生とかはMAPの下に」への対応。
+     左列=盤面＋その下に再生操作バー、右列=ログ専用（幅広・左列の高さいっぱいまで伸ばす） */
+  .battle-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 40%); }
+  .battle-main-col { display: flex; flex-direction: column; min-width: 0; }
+  .battle-playback {
+    flex-direction: column; gap: 6px; padding: 10px 16px;
+    border-top: 1px solid var(--panel-border); background: var(--panel);
+  }
+  .battle-playback .pb-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .battle-playback .pb-speed { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; font-size: 0.85em; }
+  .battle-playback #tickLabel { margin-left: auto; }
+  .battle-playback #battleResultLabel:empty { display: none; }
   .battle-board-col {
     position: relative; display: flex; align-items: center; justify-content: center; padding: 20px; overflow: auto;
     background: radial-gradient(ellipse 90% 60% at 50% 10%, rgba(74,144,217,0.06), transparent 60%);
   }
-  .battle-side { border-left: 1px solid var(--panel-border); border-radius: 0; width: auto; max-height: 680px; overflow: auto; }
+  .battle-body .battle-side { border-left: 1px solid var(--panel-border); border-radius: 0; width: auto; min-height: 0; gap: 8px; } /* .controls の width:260px を上書き */
+  /* ログ欄は左列（盤面＋再生バー）の高さに合わせる。フィード自体の内容量で行の高さが伸びないよう絶対配置 */
+  .battle-log-wrap { position: relative; flex: 1; min-height: 420px; }
+  .battle-log-wrap #battleLogFeed { position: absolute; inset: 0; height: auto; font-size: 0.9em; }
 
   @media (max-width: 900px) {
     .strip { flex-direction: column; align-items: stretch; }
     .strip-label { width: auto; }
     .battle-body { grid-template-columns: 1fr; }
-    .battle-side { border: none; border-top: 1px solid var(--panel-border); max-height: none; }
+    .battle-body .battle-side { border: none; border-top: 1px solid var(--panel-border); }
+    .battle-log-wrap { min-height: 60vh; }
   }
   .panel {
     background: var(--panel);
@@ -956,35 +971,37 @@
       <div class="base-hp-group" id="battleBaseHpGroup"></div>
     </div>
     <div class="battle-body">
-      <div class="battle-board-col" id="boardSlotBattle">
-        <div class="board-zoom-controls">
-          <button type="button" class="board-zoom-out" title="縮小">－</button>
-          <span class="board-zoom-label">100%</span>
-          <button type="button" class="board-zoom-in" title="拡大">＋</button>
-          <button type="button" class="board-zoom-reset" title="表示を戻す">リセット</button>
+      <div class="battle-main-col">
+        <div class="battle-board-col" id="boardSlotBattle">
+          <div class="board-zoom-controls">
+            <button type="button" class="board-zoom-out" title="縮小">－</button>
+            <span class="board-zoom-label">100%</span>
+            <button type="button" class="board-zoom-in" title="拡大">＋</button>
+            <button type="button" class="board-zoom-reset" title="表示を戻す">リセット</button>
+          </div>
         </div>
-      </div>
-      <div class="panel controls battle-side">
-        <div id="playbackControls" style="display:none;">
-          <div class="status-line" id="tickLabel"></div>
-          <div style="display:flex; gap:4px; flex-wrap:wrap;">
+        <div id="playbackControls" class="battle-playback" style="display:none;">
+          <div class="pb-row">
             <button id="restartBtn">|◀ 最初</button>
             <button id="playPauseBtn">▶ 再生</button>
             <button id="skipBtn">▶▶ 最後まで</button>
+            <span class="pb-speed">
+              速度:
+              <button class="speed-btn" data-speed="1">1x</button>
+              <button class="speed-btn" data-speed="2">2x</button>
+              <button class="speed-btn" data-speed="4">4x</button>
+            </span>
+            <span class="status-line" id="tickLabel"></span>
           </div>
-          <div class="status-line" style="margin-top:6px;">
-            速度:
-            <button class="speed-btn" data-speed="1">1x</button>
-            <button class="speed-btn" data-speed="2">2x</button>
-            <button class="speed-btn" data-speed="4">4x</button>
-          </div>
-          <div id="battleResultLabel" class="status-line" style="margin-top:6px; color:#ffd479;"></div>
-          <div id="roundAdvancePanel" style="display:none; margin-top:8px;">
+          <div id="battleResultLabel" class="status-line" style="color:#ffd479;"></div>
+          <div id="roundAdvancePanel" style="display:none;">
             <button id="nextRoundBtn">次のラウンドへ進む</button>
           </div>
         </div>
+      </div>
+      <div class="panel controls battle-side">
         <h2>ログ</h2>
-        <div id="battleLogFeed"></div>
+        <div class="battle-log-wrap"><div id="battleLogFeed"></div></div>
       </div>
     </div>
   </div>
@@ -4238,7 +4255,7 @@ function enterBattleMode() {
   gDragPreview.innerHTML = ""; // [Block C] 万一ドラッグ中に戦闘へ入っても残らないように
   gDragPreview.setAttribute("visibility", "hidden");
   gBattleUnits.setAttribute("visibility", "visible");
-  document.getElementById("playbackControls").style.display = "block";
+  document.getElementById("playbackControls").style.display = "flex";
   document.getElementById("boardSlotBattle").appendChild(svg); // [UI] 盤面svgを戦闘画面側のスロットへ移動
   showBattleScreen();
   restartPlayback();
