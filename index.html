@@ -670,8 +670,12 @@
   .deck-slot-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
   .deck-slot-card {
     background: #20242f; border: 1px solid var(--panel-border); border-radius: 10px;
-    padding: 13px 14px; display: flex; align-items: center; gap: 12px; cursor: pointer;
+    padding: 13px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; cursor: pointer;
   }
+  /* [UI 2026-09-26] UC要望「なんのデッキに何が入っているか見やすく、アイコン画像を」。デッキ一覧の各カード下段に中身の顔アイコンを並べる */
+  .deck-slot-faces { flex-basis: 100%; min-width: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 40px)); gap: 6px; padding-left: 27px; }
+  .deck-slot-faces .h-icon { width: 100%; height: auto; aspect-ratio: 1; border-radius: 8px; font-size: 0.9em; }
+  .deck-slot-faces-empty { grid-column: 1 / -1; font-size: 0.74em; color: var(--text-faint); }
   .deck-slot-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
   .deck-slot-radio { width: 15px; height: 15px; border-radius: 50%; border: 2px solid #5c6479; flex-shrink: 0; }
   .deck-slot-card.active .deck-slot-radio { border-color: var(--accent); background: var(--accent); }
@@ -1117,11 +1121,21 @@ function renderDeckScreen() {
     card.className = "deck-slot-card" + (isActive ? " active" : "");
     const name = slot ? slot.name : `デッキ${i + 1}（未作成）`;
     const count = slot && slot.characterIds ? slot.characterIds.length : 0;
+    // [UI 2026-09-26] 中身のキャラを顔アイコンで一覧表示（読み込み失敗時は下の文字アイコンを見せる）
+    const faces = count
+      ? slot.characterIds.map(id => {
+          const char = getCharacter(id);
+          if (!char) return "";
+          return `<div class="h-icon" title="${char.name}">${CHAR_ICON[id] || ""}` +
+            `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="this.style.display='none'"></div>`;
+        }).join("")
+      : `<span class="deck-slot-faces-empty">キャラが入っていません</span>`;
     card.innerHTML =
       `<div class="deck-slot-radio"></div>` +
       `<div class="deck-slot-info"><div class="deck-slot-name">${name}</div>` +
       `<div class="deck-slot-count">${count}/${DECK_SIZE}体</div></div>` +
-      `<button type="button" class="deck-slot-edit-btn">編集</button>`;
+      `<button type="button" class="deck-slot-edit-btn">編集</button>` +
+      `<div class="deck-slot-faces">${faces}</div>`;
     card.addEventListener("click", (e) => {
       if (e.target.closest(".deck-slot-edit-btn")) return;
       selectActiveSlot(i);
