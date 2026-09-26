@@ -166,6 +166,7 @@
     font-size: 0.64em; line-height: 1.4; color: var(--text); background: rgba(255,212,121,0.1);
     border: 1px solid rgba(255,212,121,0.25); border-radius: 5px; padding: 2px 6px; white-space: normal;
   }
+  .skill-pill.has-tip { cursor: help; }
   .skill-pill.none { color: var(--text-faint); background: var(--panel); border-color: var(--panel-border); }
   .skill-pill.upgrade-hint { color: var(--accent); background: transparent; border-color: var(--accent); }
   .hcard.queued {
@@ -1652,9 +1653,16 @@ function skillDescription(skillStr) {
   if (!desc) return "";
   return n ? desc.replace(/N/g, n) : desc;
 }
-function skillPillsHtml(skills) {
+function skillPillsHtml(skills, withTips) {
   if (!skills.length) return `<div class="skill-pill none">スキルなし</div>`;
-  return skills.map(s => `<div class="skill-pill">${s}</div>`).join("");
+  // [UI 2026-09-26] UC要望「配置画面の右側に選択したキャラのスキル名、マウスオーバーで詳細を」。
+  // withTips指定時だけピル単位でtitleに説明を入れる（ショップ・デッキ編成のカードは従来通りカード全体のtitle）
+  return skills.map(s => withTips
+    ? `<div class="skill-pill has-tip" title="${escapeAttr(`${s}: ${skillDescription(s)}`)}">${s}</div>`
+    : `<div class="skill-pill">${s}</div>`).join("");
+}
+function escapeAttr(str) {
+  return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 // [UI 2026-09-05] UC要望によりスキル説明は個々のピルではなくカード全体（キャラ）にマウスオーバーした
 // 時点でまとめて出す形に変更。カード要素の.titleにこれを設定して使う
@@ -3050,7 +3058,7 @@ function renderOpponentDeckStrips() {
     const id = seen[i];
     const char = id && getCharacter(id);
     icons += char
-      ? `<div class="h-icon${opp === "player1" ? " p1" : ""}" title="${char.name}">${CHAR_ICON[id] || ""}` +
+      ? `<div class="h-icon${opp === "player1" ? " p1" : ""}" title="${escapeAttr(`${char.name}（HP${char.hp}・攻${char.atk}・行動力${char.ap}）\n${allSkillsTooltip(char.skills)}`)}">${CHAR_ICON[id] || ""}` +
         `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="this.style.display='none'"></div>`
       : `<div class="h-icon opp-deck-unknown" title="まだ戦場に出ていないキャラ">？</div>`;
   }
@@ -3342,7 +3350,7 @@ function renderUnitEditPanel() {
       `<div class="p">${ownerLabel}（相手）・col${unit.col},row${unit.row}</div></div>` +
       `</div>`;
     html += `<div class="hint">残りHP ${curHp}/${dChar.hp}　攻${dChar.atk}　行動力${dApDisplay}</div>`;
-    html += `<div class="skill-pills">${skillPillsHtml(dChar.skills)}</div>`;
+    html += `<div class="skill-pills">${skillPillsHtml(dChar.skills, true)}</div>`;
     html += `<div class="hint">相手の指示（目的）は秘匿のため見えません。</div>`;
     html += `<div class="inspector-spacer"></div>`;
     html += `<button id="deselectUnitBtn" class="close-btn">選択解除</button>`;
@@ -3356,6 +3364,7 @@ function renderUnitEditPanel() {
     `<div class="meta"><div class="n">${char.name}</div>` +
     `<div class="p">${ownerLabel}・col${unit.col},row${unit.row}・HP${curHp}/${char.hp}・攻${char.atk}・行動${apDisplay}</div></div>` +
     `</div>`;
+  html += `<div class="skill-pills">${skillPillsHtml(char.skills, true)}</div>`; // [UI 2026-09-26]
   // [Block B] チップUIは廃止。指示はドラッグのみで出す。ここには現在の指示を読み取り専用で表示する
   let purposeLine = `現在の指示: ${PURPOSE_LABEL[unit.purpose] || unit.purpose}`;
   if (unit.purpose === "goto" && unit.waypoints && unit.waypoints.length) {
