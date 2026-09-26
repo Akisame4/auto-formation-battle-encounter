@@ -166,7 +166,14 @@
     font-size: 0.64em; line-height: 1.4; color: var(--text); background: rgba(255,212,121,0.1);
     border: 1px solid rgba(255,212,121,0.25); border-radius: 5px; padding: 2px 6px; white-space: normal;
   }
-  .skill-pill.has-tip { cursor: help; }
+  .skill-pill.has-tip, .opp-deck-grid .has-tip { cursor: help; }
+  /* [UI 2026-09-26] スマホ向け：data-tip要素をタップすると出る説明ポップアップ（PCはtitleのマウスオーバーも併用） */
+  #tapTip {
+    position: fixed; z-index: 1000; max-width: min(280px, calc(100vw - 16px)); padding: 8px 10px;
+    background: #111318; color: var(--text); border: 1px solid var(--accent-dim); border-radius: 8px;
+    font-size: 0.8em; line-height: 1.5; white-space: pre-line; box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    pointer-events: none; display: none;
+  }
   .skill-pill.none { color: var(--text-faint); background: var(--panel); border-color: var(--panel-border); }
   .skill-pill.upgrade-hint { color: var(--accent); background: transparent; border-color: var(--accent); }
   .hcard.queued {
@@ -1658,12 +1665,40 @@ function skillPillsHtml(skills, withTips) {
   // [UI 2026-09-26] UC要望「配置画面の右側に選択したキャラのスキル名、マウスオーバーで詳細を」。
   // withTips指定時だけピル単位でtitleに説明を入れる（ショップ・デッキ編成のカードは従来通りカード全体のtitle）
   return skills.map(s => withTips
-    ? `<div class="skill-pill has-tip" title="${escapeAttr(`${s}: ${skillDescription(s)}`)}">${s}</div>`
+    ? `<div class="skill-pill has-tip" title="${escapeAttr(`${s}: ${skillDescription(s)}`)}" data-tip="${escapeAttr(`${s}: ${skillDescription(s)}`)}">${s}</div>`
     : `<div class="skill-pill">${s}</div>`).join("");
 }
 function escapeAttr(str) {
   return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+// [UI 2026-09-26] UC要望「スマホでもタップで説明が出るように」。titleのマウスオーバーはタッチ端末では
+// 出ないため、data-tipを持つ要素（スキルピル・相手のデッキの判明アイコン）をタップ/クリックすると
+// その要素の近くに説明ポップアップを出す。もう一度同じ要素か他の場所をタップ、スクロールで閉じる
+let tapTipAnchor = null;
+function hideTapTip() {
+  const box = document.getElementById("tapTip");
+  if (box) box.style.display = "none";
+  tapTipAnchor = null;
+}
+function showTapTip(anchor) {
+  const box = document.getElementById("tapTip");
+  box.textContent = anchor.dataset.tip;
+  box.style.display = "block";
+  const r = anchor.getBoundingClientRect(), bw = box.offsetWidth, bh = box.offsetHeight, m = 8;
+  const left = Math.min(Math.max(m, r.left + r.width / 2 - bw / 2), window.innerWidth - bw - m);
+  let top = r.bottom + 6;
+  if (top + bh > window.innerHeight - m) top = Math.max(m, r.top - bh - 6); // 下に収まらなければ上に出す
+  box.style.left = `${left}px`; box.style.top = `${top}px`;
+  tapTipAnchor = anchor;
+}
+document.addEventListener("click", (e) => {
+  const anchor = e.target.closest && e.target.closest("[data-tip]");
+  if (anchor && anchor !== tapTipAnchor) { showTapTip(anchor); return; }
+  hideTapTip();
+});
+window.addEventListener("scroll", hideTapTip, true);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTapTip(); });
 // [UI 2026-09-05] UC要望によりスキル説明は個々のピルではなくカード全体（キャラ）にマウスオーバーした
 // 時点でまとめて出す形に変更。カード要素の.titleにこれを設定して使う
 function allSkillsTooltip(skills) {
@@ -3057,8 +3092,9 @@ function renderOpponentDeckStrips() {
   for (let i = 0; i < DECK_SIZE; i++) {
     const id = seen[i];
     const char = id && getCharacter(id);
+    const tip = char && escapeAttr(`${char.name}（HP${char.hp}・攻${char.atk}・行動力${char.ap}）\n${allSkillsTooltip(char.skills)}`);
     icons += char
-      ? `<div class="h-icon${opp === "player1" ? " p1" : ""}" title="${escapeAttr(`${char.name}（HP${char.hp}・攻${char.atk}・行動力${char.ap}）\n${allSkillsTooltip(char.skills)}`)}">${CHAR_ICON[id] || ""}` +
+      ? `<div class="h-icon has-tip${opp === "player1" ? " p1" : ""}" title="${tip}" data-tip="${tip}">${CHAR_ICON[id] || ""}` +
         `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="this.style.display='none'"></div>`
       : `<div class="h-icon opp-deck-unknown" title="まだ戦場に出ていないキャラ">？</div>`;
   }
@@ -5206,5 +5242,6 @@ async function initApp() {
 }
 initApp();
 </script>
+<div id="tapTip" role="tooltip"></div>
 </body>
 </html>
