@@ -675,6 +675,15 @@
   /* [UI 2026-09-26] UC要望「なんのデッキに何が入っているか見やすく、アイコン画像を」。デッキ一覧の各カード下段に中身の顔アイコンを並べる */
   .deck-slot-faces { flex-basis: 100%; min-width: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 40px)); gap: 6px; padding-left: 27px; }
   .deck-slot-faces .h-icon { width: 100%; height: auto; aspect-ratio: 1; border-radius: 8px; font-size: 0.9em; }
+  /* [UI 2026-09-26] 相手のデッキ（戦場で見えたキャラの顔アイコン＋まだ見ていない枠は「？」） */
+  .opp-deck-strip { flex-shrink: 0; }
+  .opp-deck-title { font-size: 0.78em; font-weight: 700; color: var(--text-dim); margin-bottom: 6px; }
+  .opp-deck-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 34px)); gap: 5px; }
+  .opp-deck-grid .h-icon { width: 100%; height: auto; aspect-ratio: 1; border-radius: 7px; font-size: 0.8em;
+    background: linear-gradient(160deg, var(--p2), var(--p2-dark)); }
+  .opp-deck-grid .h-icon.p1 { background: linear-gradient(160deg, var(--p1), var(--p1-dark)); }
+  .opp-deck-grid .opp-deck-unknown { background: #20242f; border: 1px dashed #4a5166; color: var(--text-faint); font-size: 1em; }
+  #oppDeckPlacement { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--panel-border); }
   .deck-slot-faces-empty { grid-column: 1 / -1; font-size: 0.74em; color: var(--text-faint); }
   .deck-slot-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
   .deck-slot-radio { width: 15px; height: 15px; border-radius: 50%; border: 2px solid #5c6479; flex-shrink: 0; }
@@ -941,6 +950,7 @@
         <svg id="board"></svg>
       </div>
       <div class="inspector-strip" id="unitEditPanel">
+        <div id="oppDeckPlacement" class="opp-deck-strip"></div>
         <div id="unitEditContent">
           <div class="hint">キャラを選択すると、ここに指示・向きの設定が表示されます。</div>
         </div>
@@ -1008,6 +1018,7 @@
         </div>
       </div>
       <div class="panel controls battle-side">
+        <div id="oppDeckBattle" class="opp-deck-strip"></div>
         <h2>ログ</h2>
         <div class="battle-log-wrap"><div id="battleLogFeed"></div></div>
       </div>
@@ -2989,6 +3000,68 @@ function renderDragPreview() {
 let overviewMode = true;
 const ORDER_LINE_FAINT_OPACITY = 0.32; // 選択していないキャラの指示線の薄さ（全軍俯瞰ON時）
 
+// [UI 2026-09-26] UC要望「敵が使ったキャラについて、相手の手札（デッキ）に何がいるのかわかるように
+// アイコンを戦闘画面と配置画面に。戦場に出ていないキャラは？アイコンで」。
+// 陣営ごとに「戦場で見えたキャラ」を見えた順に記録する（相手の新規配置は開戦まで秘匿なので、記録は
+// 戦闘画面で盤面に出た時点）。変化（タヌキ）は正体判明までは偽装先のキャラとして記録し、判明したら
+// 本当のキャラも追加する（偽装先も必ず同じデッキの持ちキャラなので嘘にはならない）。
+// 同じ試合の中でのみ有効。リロードで消えないようタブ単位のsessionStorageに保存し、ルームが変われば捨てる
+const SEEN_CHARS_KEY = "afbe_seen_chars_v1";
+let seenCharsState = null; // { room, seen: { player1: [charId...], player2: [...] } }
+function seenRoomKey() { return roomCode || "local"; }
+function getSeenChars() {
+  if (!seenCharsState) {
+    try { seenCharsState = JSON.parse(sessionStorage.getItem(SEEN_CHARS_KEY)); } catch { seenCharsState = null; }
+  }
+  if (!seenCharsState || seenCharsState.room !== seenRoomKey() || !seenCharsState.seen) {
+    seenCharsState = { room: seenRoomKey(), seen: { player1: [], player2: [] } };
+  }
+  return seenCharsState;
+}
+function saveSeenChars() {
+  try { sessionStorage.setItem(SEEN_CHARS_KEY, JSON.stringify(seenCharsState)); } catch {}
+}
+function clearSeenChars() {
+  seenCharsState = { room: seenRoomKey(), seen: { player1: [], player2: [] } };
+  saveSeenChars();
+  renderOpponentDeckStrips();
+}
+// entities: 戦闘表示中のユニット（charId/disguiseAs/revealed/owner）。見えている姿のキャラを記録する
+function noteSeenChars(entities) {
+  const st = getSeenChars();
+  let changed = false;
+  const add = (owner, charId) => {
+    const list = st.seen[owner];
+    if (!list || !charId || list.includes(charId)) return;
+    list.push(charId); changed = true;
+  };
+  for (const e of entities) {
+    if (e.isBase) continue;
+    add(e.owner, (e.disguiseAs && !e.revealed) ? e.disguiseAs : e.charId);
+  }
+  if (changed) { saveSeenChars(); renderOpponentDeckStrips(); }
+}
+function renderOpponentDeckStrips() {
+  const me = (roomCode && myRole) ? myRole : currentPlayer;
+  const opp = me === "player1" ? "player2" : "player1";
+  const seen = getSeenChars().seen[opp] || [];
+  let icons = "";
+  for (let i = 0; i < DECK_SIZE; i++) {
+    const id = seen[i];
+    const char = id && getCharacter(id);
+    icons += char
+      ? `<div class="h-icon${opp === "player1" ? " p1" : ""}" title="${char.name}">${CHAR_ICON[id] || ""}` +
+        `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="this.style.display='none'"></div>`
+      : `<div class="h-icon opp-deck-unknown" title="まだ戦場に出ていないキャラ">？</div>`;
+  }
+  const html = `<div class="opp-deck-title">相手のデッキ（判明 ${Math.min(seen.length, DECK_SIZE)}/${DECK_SIZE}）</div>` +
+    `<div class="opp-deck-grid">${icons}</div>`;
+  for (const id of ["oppDeckPlacement", "oppDeckBattle"]) {
+    const box = document.getElementById(id);
+    if (box) box.innerHTML = html;
+  }
+}
+
 // [UI 2026-09-26] 指示忘れ防止の点滅対象か（render()参照）。orderedRoundは指示を出したラウンド番号で、
 // advanceToNextRound()でユニットを作り直す際に引き継がないため、次ラウンドでは自然に未指示扱いに戻る
 function needsOrderAttention(unit) {
@@ -2996,6 +3069,7 @@ function needsOrderAttention(unit) {
 }
 
 function render() {
+  renderOpponentDeckStrips(); // [UI 2026-09-26]
   // 空きマス色 + 壁は固定なので base 層は初期描画のみで良いが、
   // 自陣オーバーレイ・拠点/キャラマーカーは毎回更新する。
   seedTrapMarkersFromPersistent(); // [UI 2026-09-05] 前ラウンドから引き継いだ罠は配置フェイズでも見える
@@ -3991,6 +4065,7 @@ function applyEventsForTick(tickEvents) {
         if (entity) {
           entity.revealed = true;
           updateBattleMarkerIdentity(entity);
+          noteSeenChars([entity]); // [UI 2026-09-26] 正体判明したら本当のキャラも相手のデッキ表示に追加
           spawnSkillLabel(entity.col, entity.row, "正体判明");
         }
         break;
@@ -4121,6 +4196,7 @@ function restoreShownBattleResult() {
   document.getElementById("roundAdvancePanel").style.display = shownBattleResult.advanceDisplay;
 }
 function showBattleResult() {
+  noteSeenChars(displayState.units); // [UI 2026-09-26] 最後まで飛ばした場合の正体判明分も確実に反映
   const totalHp = owner => displayState.bases.filter(b => b.owner === owner).reduce((s, b) => s + b.hp, 0);
   const aliveCount = owner => displayState.units.filter(u => u.owner === owner && u.alive).length;
   const reasonLabel = { annihilation: "全滅", baseFall: "拠点陥落", roundEnd: "行動力切れ（拠点HP/与ダメージ/キャラ数で判定）" }[roundOutcome.endReason];
@@ -4166,6 +4242,7 @@ function showMatchResultPopup(winner, reasonLabel) {
 
 // [UI 2026-09-05] resetBtn（開発用「全てリセット」）と再戦ボタンで共用するゲーム状態の初期化
 function resetGameState() {
+  clearSeenChars(); // [UI 2026-09-26] 新しい試合では相手のデッキ表示もリセット
   resetBasesToFixedPositions();
   units.length = 0;
   queue.player1 = [];
@@ -4359,6 +4436,7 @@ function enterBattleMode() {
 
   battleMode = true;
   shownBattleResult = null;
+  noteSeenChars(units); // [UI 2026-09-26] 開戦した瞬間に盤面に出た相手キャラ（偽装中は偽装先の姿）を記録
   setPlaybackSpeed(1); // [UI 2026-09-26] 各ラウンドの戦闘は常に1倍速から始める（前ラウンドの倍速を持ち越さない）
   setStaticTempWallsVisible(false); // [バグ修正 2026-09-26] 戦闘中は#gTempWallsのtick別マーカーだけを一時壁の表示にする
   gMarkers.setAttribute("visibility", "hidden");
