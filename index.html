@@ -359,6 +359,7 @@
   .battle-playback .pb-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .battle-playback .pb-speed { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; font-size: 0.85em; }
   .battle-playback #tickLabel { margin-left: auto; }
+  .battle-playback #seekBar { width: 100%; margin: 0 0 6px; accent-color: #ffd479; cursor: pointer; }
   .battle-playback #battleResultLabel:empty { display: none; }
   .battle-board-col {
     position: relative; display: flex; align-items: center; justify-content: center; padding: 20px; overflow: auto;
@@ -980,6 +981,7 @@
           </div>
         </div>
         <div id="playbackControls" class="battle-playback" style="display:none;">
+          <input type="range" id="seekBar" min="0" max="0" value="0" step="1" title="ドラッグで好きなtickへ移動">
           <div class="pb-row">
             <button id="restartBtn">|◀ 最初</button>
             <button id="playPauseBtn">▶ 再生</button>
@@ -2586,7 +2588,11 @@ const SE_PRESETS = {
     playTone(ctx, 440, 0.16, 0.14, { type: "sine", vol: 0.16 });
   },
 };
+// [UI 2026-09-26] シークバーで途中のtickへ飛ぶ時、tick0からイベントを演出なしで一気に再適用する間だけtrue。
+// 効果音・浮き文字・攻撃線・移動tweenを出さず、状態と見た目だけを即座に反映する
+let silentSeek = false;
 function playSE(name) {
+  if (silentSeek) return;
   try {
     const ctx = getAudioCtx();
     if (!ctx || !SE_PRESETS[name]) return;
@@ -3643,6 +3649,7 @@ let playbackSpeed = 1;
 const battleMarkerEls = new Map(); // entityId -> {g, circle, label, hpBg, hpFill, poisonDot, r, isBase}
 
 function tweenAttr(node, attrs, duration) {
+  if (silentSeek) { for (const k in attrs) node.setAttribute(k, attrs[k]); return; } // [UI 2026-09-26] シーク中は即座に反映
   const start = {};
   for (const k in attrs) start[k] = parseFloat(node.getAttribute(k)) || 0;
   const t0 = performance.now();
@@ -3736,6 +3743,7 @@ function moveMarkerTo(entity, duration) {
 }
 
 function spawnFloatingNumber(entity, text, color) {
+  if (silentSeek) return;
   const { x, y } = hexCenter(entity.col, entity.row);
   const t = el("text", { x, y: y - 10, "text-anchor": "middle", fill: color, "font-size": "11", "font-weight": "bold", class: "dmg-float" });
   t.textContent = text;
@@ -3746,6 +3754,7 @@ function spawnFloatingNumber(entity, text, color) {
 // [UI 2026-09-06] UC要望「スキルを発動したとき、発動した場所にふわっとスキル名を出してほしい」への対応。
 // ダメージ数字（spawnFloatingNumber、entity中心のやや上）と重ならないよう、さらに上・小さめ・金色で表示する
 function spawnSkillLabel(col, row, skillName) {
+  if (silentSeek) return;
   const { x, y } = hexCenter(col, row);
   const t = el("text", { x, y: y - HEX_SIZE - 10, "text-anchor": "middle", fill: "#ffd479", "font-size": "9", "font-weight": "bold", class: "dmg-float" });
   t.textContent = skillName;
@@ -3754,7 +3763,7 @@ function spawnSkillLabel(col, row, skillName) {
 }
 
 function spawnAttackFlash(attacker, target) {
-  if (!attacker || !target) return;
+  if (silentSeek || !attacker || !target) return;
   const a = hexCenter(attacker.col, attacker.row), b = hexCenter(target.col, target.row);
   const line = el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: battleColor(attacker.owner), "stroke-width": "2", class: "atk-line" });
   gBattleFx.appendChild(line);
@@ -3951,7 +3960,10 @@ function applyEventsForTick(tickEvents) {
         const entity = findDisplayEntity(ev.unitId);
         entity.alive = false;
         const m = battleMarkerEls.get(entity.id);
-        if (m) m.g.classList.add("death-fade");
+        if (m) {
+          m.g.classList.add("death-fade");
+          if (silentSeek) m.g.style.animationDuration = "0s"; // [UI 2026-09-26] シーク時は消えた状態へ即座に
+        }
         break;
       }
       case "poison": {
@@ -4048,8 +4060,19 @@ function effectiveTickCount() {
 function updateTickLabel() {
   document.getElementById("tickLabel").textContent =
     `tick ${playbackTick} / ${effectiveTickCount()}（終了理由: 行動力枯渇/停止）`;
+  const seekBar = document.getElementById("seekBar"); // [UI 2026-09-26] シークバーも現在tickに追従
+  seekBar.max = effectiveTickCount();
+  seekBar.value = playbackTick;
 }
 
+// [UI 2026-09-26] このラウンドで一度表示した決着表示（結果文言・「次のラウンドへ進む」の表示状態）。
+// シークバーや「最初」で巻き戻しても消さずに復元する（試合終了ポップアップ・SEは初回のみ）
+let shownBattleResult = null;
+function restoreShownBattleResult() {
+  if (!shownBattleResult) return;
+  document.getElementById("battleResultLabel").textContent = shownBattleResult.text;
+  document.getElementById("roundAdvancePanel").style.display = shownBattleResult.advanceDisplay;
+}
 function showBattleResult() {
   const totalHp = owner => displayState.bases.filter(b => b.owner === owner).reduce((s, b) => s + b.hp, 0);
   const aliveCount = owner => displayState.units.filter(u => u.owner === owner && u.alive).length;
@@ -4068,7 +4091,9 @@ function showBattleResult() {
     `再生終了。拠点HP合計: P1=${totalHp("player1")} / P2=${totalHp("player2")}　生存キャラ数: P1=${aliveCount("player1")} / P2=${aliveCount("player2")}` +
     `　→ ${isMatchOver ? "試合結果" : "ラウンド結果"}: ${winnerLabel}（${reasonLabel}）${cutoffNote}`;
   document.getElementById("roundAdvancePanel").style.display = isMatchOver ? "none" : "block";
-  if (isMatchOver) {
+  const firstTime = !shownBattleResult;
+  shownBattleResult = { text: document.getElementById("battleResultLabel").textContent, advanceDisplay: isMatchOver ? "none" : "block" };
+  if (isMatchOver && firstTime) {
     showStatus(`試合終了。最終結果: ${winnerLabel}`);
     showMatchResultPopup(roundOutcome.winner, reasonLabel);
   }
@@ -4133,6 +4158,41 @@ function startPlayback() {
   if (playbackTimer || playbackTick >= effectiveTickCount()) return;
   playbackTimer = setInterval(stepForward, 700 / playbackSpeed);
   document.getElementById("playPauseBtn").textContent = "⏸ 一時停止";
+}
+
+// [UI 2026-09-26] UC要望「戦闘画面にシークバーを追加して戦闘を自由に見れるように」。
+// 表示状態はログを先頭から順に適用して作る設計（再計算しない）なので、任意tickへは
+// 「tick0に戻す→そこまでのイベントを演出なしで再適用」で移動する。通常再生と同じ
+// applyEventsForTick()を通すので、再生で見える状態と完全に一致する
+// 一度決着まで表示した後は、巻き戻しても結果表示と「次のラウンドへ進む」を消さない
+// （見返してからそのまま進めるように。試合終了ポップアップ・SEも再度は出さない）
+function seekTo(targetTick) {
+  const lastTick = effectiveTickCount();
+  const t = Math.max(0, Math.min(lastTick, targetTick | 0));
+  const wasPlaying = !!playbackTimer;
+  restartPlayback();
+  silentSeek = true;
+  try {
+    while (playbackTick < t) {
+      playbackTick++;
+      applyEventsForTick(eventsByTick[playbackTick] || []);
+    }
+  } finally {
+    silentSeek = false;
+  }
+  renderAttackRangeOverlay(displayState.units);
+  renderBattleBaseHp();
+  renderTempWallMarkers(wallStatesByTick[playbackTick] || wallSnapshotAtRoundStart);
+  updateTickLabel();
+  if (!shownBattleResult && playbackTick >= lastTick) showBattleResult(); // 表示済みならrestartPlayback()が復元済み
+  if (playbackTick < lastTick && wasPlaying) startPlayback();
+}
+
+// [UI 2026-09-26] UC要望「倍速は各ラウンドで1倍に戻る（配置画面が終わって最初は1倍）」
+function setPlaybackSpeed(speed) {
+  playbackSpeed = speed;
+  document.querySelectorAll(".speed-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.speed, 10) === speed));
+  if (playbackTimer) { pausePlayback(); startPlayback(); }
 }
 
 function skipToEnd() {
@@ -4214,6 +4274,7 @@ function restartPlayback() {
       ? "戦闘イベントが0件でした。配置したキャラの指示が全員「この場を守る」（配置直後のデフォルト）のままだと、誰も自分から動かず0tickで終わります。盤面でキャラからドラッグして指示を出してから再度お試しください。"
       : "";
   document.getElementById("roundAdvancePanel").style.display = "none";
+  restoreShownBattleResult(); // [UI 2026-09-26] 決着表示済みなら巻き戻しても結果と「次のラウンドへ進む」を残す
   updateTickLabel();
 }
 
@@ -4250,6 +4311,8 @@ function enterBattleMode() {
   }
 
   battleMode = true;
+  shownBattleResult = null;
+  setPlaybackSpeed(1); // [UI 2026-09-26] 各ラウンドの戦闘は常に1倍速から始める（前ラウンドの倍速を持ち越さない）
   setStaticTempWallsVisible(false); // [バグ修正 2026-09-26] 戦闘中は#gTempWallsのtick別マーカーだけを一時壁の表示にする
   gMarkers.setAttribute("visibility", "hidden");
   gDragPreview.innerHTML = ""; // [Block C] 万一ドラッグ中に戦闘へ入っても残らないように
@@ -4312,13 +4375,10 @@ document.getElementById("playPauseBtn").addEventListener("click", () => {
 document.getElementById("restartBtn").addEventListener("click", restartPlayback);
 document.getElementById("skipBtn").addEventListener("click", skipToEnd);
 document.querySelectorAll(".speed-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    playbackSpeed = parseInt(btn.dataset.speed, 10);
-    document.querySelectorAll(".speed-btn").forEach(b => b.classList.toggle("active", b === btn));
-    if (playbackTimer) { pausePlayback(); startPlayback(); }
-  });
+  btn.addEventListener("click", () => setPlaybackSpeed(parseInt(btn.dataset.speed, 10)));
 });
 document.querySelector('.speed-btn[data-speed="1"]').classList.add("active");
+document.getElementById("seekBar").addEventListener("input", e => seekTo(parseInt(e.target.value, 10)));
 
 /* ==================== P6: ラウンド進行（設計書§6・§7、DOM非依存の純粋関数＋進行UI） ====================
  * simulateBattle()（P3）は§6-1の即時終了判定を行わずtickループを機械的に最後まで回す設計のため、

@@ -544,3 +544,10 @@ UCから「見た目も操作性もUIを整えたい、まずロビーから」�
   - **真因**: `buildBoardCells()`が一時壁の琥珀色・残りtick数を土台（`#gBase`）のpolygon自体に焼き込んでいた。次ラウンドの戦闘再生中、`#gTempWalls`のtick別マーカーは正しくカウントダウン→消滅するが、その下の土台に配置画面時点の表示が残り続けていた
   - **修正**: 土台polygonは固定壁/空きマスの色のみにし、配置画面用の一時壁表示は別要素（`.temp-wall-static`）に分離。`setStaticTempWallsVisible()`で`enterBattleMode()`時に隠し、`exitBattleMode()`時に戻す
   - **検証**: ヘッドレスChrome（CDP）で、残り3tickの持ち越し壁がある状態から次ラウンド戦闘を最後まで進め、戦闘中は土台側が非表示・終了時に持ち越し壁が完全に消え、配置画面に戻ると実在する一時壁のみ正しい残り数で表示されることを確認。コンソールエラー0件
+
+- **[2026-09-26] 戦闘画面にシークバー追加＋倍速を毎ラウンド1倍にリセット**
+  - UC要望「戦闘画面にシークバーを追加して戦闘を自由に見れるように」「倍速は各ラウンドで1倍に戻る、配置画面が終わって最初は1倍」
+  - シークバー（`#seekBar`、`#playbackControls`の先頭）: `seekTo(tick)`で`restartPlayback()`→tick0から`applyEventsForTick()`を演出なし（`silentSeek`フラグ中はSE・浮き文字・攻撃線を出さず、`tweenAttr`は即時反映、death-fadeはanimationDuration 0s）で再適用。通常再生と同じ関数を通すため表示状態が一致する。`updateTickLabel()`でバーを現在tickに追従。再生中にシークしたら再生継続
+  - 決着表示の保持: `showBattleResult()`が表示内容を`shownBattleResult`にキャッシュし、`restartPlayback()`（シーク・「最初」）で復元。勝敗ポップアップ/SEはラウンド初回のみ。`enterBattleMode()`でリセット
+  - 倍速: `setPlaybackSpeed()`に集約し、`enterBattleMode()`で毎回1倍に戻す
+  - 検証: ヘッドレスChrome（CDP）で、通常再生でtick Nまで進めた状態とシークでtick Nへ戻した状態（マーカー位置・HP・撃破・ログ件数・罠）が一致、シークで末尾＝「最後まで」と一致、4x→次戦闘開始で1x、巻き戻し後も「次のラウンドへ進む」が残ることを確認。コンソールエラー0件
