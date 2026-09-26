@@ -135,6 +135,8 @@
   /* [UI 2026-08-25] キャラ画像（UC用意）。images/chars/<charId>.png が無ければ読み込み失敗時に
      JS側でdisplay:noneにして、下の文字アイコン（既存のCHAR_ICON）にフォールバックする */
   .h-icon-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .char-fallback { display: none; }
+  .img-missing > .char-fallback { display: inline; }
   /* [UI 2026-09-06] キャラカード・アイコンの背景をP1/P2で色分け（UC要望「赤の陣地のプレイヤーの
      キャラの背景は赤にして」）。既定（クラス無し）はP1の青のまま、.p2を付けた時だけ赤に切り替える */
   .h-banner.p2, .h-icon.p2 { background: linear-gradient(160deg, var(--p2), var(--p2-dark)); }
@@ -1166,8 +1168,8 @@ function deckFacesHtml(slot) {
   return slot.characterIds.map(id => {
     const char = getCharacter(id);
     if (!char) return "";
-    return `<div class="h-icon" title="${char.name}">${CHAR_ICON[id] || ""}` +
-      `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="this.style.display='none'"></div>`;
+    return `<div class="h-icon" title="${char.name}">${charFallbackTag(id)}` +
+      `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="${IMG_FALLBACK_ONERROR}"></div>`;
   }).join("");
 }
 
@@ -1223,7 +1225,7 @@ function renderDeckEditGrid() {
     card.innerHTML =
       // [バグ修正 2026-09-19] UC報告「デッキ選択画面で購入金額が分からない」。ショップカードと同じ
       // .h-priceバッジをバナーに追加（値段自体は元々char.priceに保持済みで、表示していなかっただけ）
-      `<div class="h-banner">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}<span class="h-price">${char.price}cr</span></div>` +
+      `<div class="h-banner">${charFallbackTag(char.id)}${charImageTag(char.id)}<span class="h-price">${char.price}cr</span></div>` +
       `<div class="h-body"><div class="h-name">${char.name}</div>` +
       statBarsHtml(char) +
       `<div class="skill-pills">${skillPillsHtml(char.skills)}</div></div>`;
@@ -1255,7 +1257,7 @@ function renderDeckEditSelectedList() {
     row.className = "deck-edit-selected-row";
     row.innerHTML =
       `<span class="deck-edit-selected-idx">${i}</span>` +
-      `<div class="h-icon">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
+      `<div class="h-icon">${charFallbackTag(char.id)}${charImageTag(char.id)}</div>` +
       `<span class="deck-edit-selected-name">${char.name}</span>` +
       `<span class="deck-edit-selected-remove">✕</span>`;
     row.title = char.name;
@@ -1626,8 +1628,15 @@ function charFaceSrc(charId) {
   return `images/chars/game_characters_faces/${file}`;
 }
 // カード用（HTML文字列内に埋め込む）。読み込み失敗時はこのimgだけ非表示にし、下の文字アイコンを見せる
+// [UI 2026-09-27] UC要望「キャラ画像の後ろに文字があるがいらない。画像が無かった場合だけ文字を」。
+// 文字アイコンは.char-fallbackで包んで普段は非表示にし、画像の読み込みに失敗した時だけ
+// 親要素に.img-missingを付けて表示する（透過PNGの隙間から文字が透けて見えていた）
+function charFallbackTag(charId) {
+  return `<span class="char-fallback">${CHAR_ICON[charId] || ""}</span>`;
+}
+const IMG_FALLBACK_ONERROR = "this.style.display='none';this.parentNode.classList.add('img-missing')";
 function charImageTag(charId) {
-  return `<img class="h-icon-img" src="${charImageSrc(charId)}" alt="" onerror="this.style.display='none'">`;
+  return `<img class="h-icon-img" src="${charImageSrc(charId)}" alt="" onerror="${IMG_FALLBACK_ONERROR}">`;
 }
 
 // [UI 2026-09-05] ステータス目盛りバー表示（UC提示の参考画像を基にArtifactでモックアップ→確認済み）。
@@ -2882,7 +2891,7 @@ for (const boundaryRow of [NEUTRAL_ROW_START - 1, NEUTRAL_ROW_END]) {
 // マーカーだけは顔アップの<charId>_face.pngを優先して使う（カード側の.h-bannerは従来どおり全身画像のまま）。
 // 顔画像が無ければ全身画像に、それも無ければ<image>を非表示にして下の色付き丸＋2文字ラベルにフォールバックする。
 // uidはSVG内でclipPathのidが衝突しないようにするためのキー（配置マーカーはunit.id、戦闘マーカーは`b-${entity.id}`等）。
-function appendCharMarkerImage(parentEl, charId, cx, cy, r, uid) {
+function appendCharMarkerImage(parentEl, charId, cx, cy, r, uid, fallbackLabel) {
   const clipId = `charclip-${uid}`;
   const clip = el("clipPath", { id: clipId });
   const clipCircle = el("circle", { cx, cy, r });
@@ -2892,10 +2901,12 @@ function appendCharMarkerImage(parentEl, charId, cx, cy, r, uid) {
     href: charFaceSrc(charId), "preserveAspectRatio": "xMidYMid slice",
     "clip-path": `url(#${clipId})`, "pointer-events": "none",
   });
+  // [UI 2026-09-27] 画像を重ねる間は下の名前ラベルを隠す（顔→全身の両方とも読めなかった時だけ見せる）
+  if (fallbackLabel) fallbackLabel.setAttribute("visibility", "hidden");
   let triedFullBody = false;
   img.addEventListener("error", () => {
     if (!triedFullBody) { triedFullBody = true; img.setAttribute("href", charImageSrc(charId)); }
-    else { img.style.display = "none"; }
+    else { img.style.display = "none"; if (fallbackLabel) fallbackLabel.setAttribute("visibility", "visible"); }
   });
   parentEl.append(clip, img);
   return { img, clipCircle };
@@ -3127,8 +3138,8 @@ function renderOpponentDeckStrips() {
     const char = id && getCharacter(id);
     const tip = char && escapeAttr(`${char.name}（HP${char.hp}・攻${char.atk}・行動力${char.ap}）\n${allSkillsTooltip(char.skills)}`);
     icons += char
-      ? `<div class="h-icon has-tip${opp === "player1" ? " p1" : ""}" title="${tip}" data-tip="${tip}">${CHAR_ICON[id] || ""}` +
-        `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="this.style.display='none'"></div>`
+      ? `<div class="h-icon has-tip${opp === "player1" ? " p1" : ""}" title="${tip}" data-tip="${tip}">${charFallbackTag(id)}` +
+        `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="${IMG_FALLBACK_ONERROR}"></div>`
       : `<div class="h-icon opp-deck-unknown" title="まだ戦場に出ていないキャラ">？</div>`;
   }
   const html = `<div class="opp-deck-title">相手のデッキ（判明 ${Math.min(seen.length, DECK_SIZE)}/${DECK_SIZE}）</div>` +
@@ -3221,7 +3232,7 @@ function render() {
       }));
     }
     gMarkers.append(circle, label);
-    appendCharMarkerImage(gMarkers, displayChar.id, x, y, HEX_SIZE * 0.62, `p-${unit.id}`); // [UI 2026-08-25] / [UI 2026-09-02] r拡大
+    appendCharMarkerImage(gMarkers, displayChar.id, x, y, HEX_SIZE * 0.62, `p-${unit.id}`, label); // [UI 2026-08-25] / [UI 2026-09-02] r拡大
     if (isOwn) {
       const purposeMark = { guard: "守", chase: "追", goto: "指", rush: "突" }[unit.purpose];
       const badgeR = HEX_SIZE * 0.62 * 0.42;
@@ -3309,7 +3320,7 @@ function renderCharList() {
     const card = document.createElement("div");
     card.className = "hcard" + (affordable ? "" : " unaffordable");
     card.innerHTML =
-      `<div class="h-banner${currentPlayer === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}<span class="h-price">${char.price}cr</span></div>` +
+      `<div class="h-banner${currentPlayer === "player2" ? " p2" : ""}">${charFallbackTag(char.id)}${charImageTag(char.id)}<span class="h-price">${char.price}cr</span></div>` +
       `<div class="h-body">` +
       `<div class="h-name">${char.name}</div>` +
       statBarsHtml(char) +
@@ -3341,7 +3352,7 @@ function renderQueueList() {
     const card = document.createElement("div");
     card.className = "hcard queued" + (selectedQueueEntry && selectedQueueEntry.qid === entry.qid ? " selected" : "");
     card.innerHTML =
-      `<div class="h-banner${currentPlayer === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}<span class="h-badge">未配置</span></div>` +
+      `<div class="h-banner${currentPlayer === "player2" ? " p2" : ""}">${charFallbackTag(char.id)}${charImageTag(char.id)}<span class="h-badge">未配置</span></div>` +
       `<div class="h-body">` +
       `<div class="h-name">${char.name}</div>` +
       statBarsHtml(char) +
@@ -3368,7 +3379,7 @@ function renderQueueList() {
     const card = document.createElement("div");
     card.className = "hcard placed" + (selectedUnitId === unit.id ? " selected" : "");
     card.innerHTML =
-      `<div class="h-banner${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
+      `<div class="h-banner${unit.owner === "player2" ? " p2" : ""}">${charFallbackTag(char.id)}${charImageTag(char.id)}</div>` +
       `<div class="h-body">` +
       `<div class="h-name">${char.name}</div>` +
       statBarsHtml(char) +
@@ -3414,7 +3425,7 @@ function renderUnitEditPanel() {
     const dChar = (unit.disguiseAs && !unit.revealed) ? getCharacter(unit.disguiseAs) : char;
     const dApDisplay = unit.apCarry ? `${dChar.ap}+${unit.apCarry}` : `${dChar.ap}`;
     let html = `<div class="inspector-who">` +
-      `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[dChar.id] || ""}${charImageTag(dChar.id)}</div>` +
+      `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${charFallbackTag(dChar.id)}${charImageTag(dChar.id)}</div>` +
       `<div class="meta"><div class="n">${dChar.name}</div>` +
       `<div class="p">${ownerLabel}（相手）・col${unit.col},row${unit.row}</div></div>` +
       `</div>`;
@@ -3429,7 +3440,7 @@ function renderUnitEditPanel() {
   }
 
   let html = `<div class="inspector-who">` +
-    `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${CHAR_ICON[char.id] || ""}${charImageTag(char.id)}</div>` +
+    `<div class="h-icon${unit.owner === "player2" ? " p2" : ""}">${charFallbackTag(char.id)}${charImageTag(char.id)}</div>` +
     `<div class="meta"><div class="n">${char.name}</div>` +
     `<div class="p">${ownerLabel}・col${unit.col},row${unit.row}・HP${curHp}/${char.hp}・攻${char.atk}・行動${apDisplay}</div></div>` +
     `</div>`;
@@ -3886,7 +3897,7 @@ function createBattleMarker(entity, isBase) {
   label.textContent = isBase ? "拠" : getCharacter(displayCharId).name.slice(0, 2);
   g.append(circle, label);
   // [UI 2026-08-25] 拠点以外はキャラ画像を重ねる（画像が無ければlabelの2文字表示のまま）
-  const charImg = isBase ? null : appendCharMarkerImage(g, displayCharId, x, y, r, `b-${entity.id}`);
+  const charImg = isBase ? null : appendCharMarkerImage(g, displayCharId, x, y, r, `b-${entity.id}`, label);
   const hpBg = el("rect", { x: x - 14, y: y - r - 8, width: "28", height: "4", fill: "#000", opacity: "0.5", rx: "1" });
   const hpFill = el("rect", { x: x - 14, y: y - r - 8, width: "28", height: "4", fill: "#4ade80", rx: "1" });
   const poisonDot = el("circle", { cx: x + r * 0.6, cy: y - r * 0.6, r: "3", fill: "#a855f7", visibility: entity.poisoned ? "visible" : "hidden" });
@@ -3912,6 +3923,7 @@ function updateBattleMarkerIdentity(entity) {
   m.label.textContent = getCharacter(displayCharId).name.slice(0, 2);
   if (m.charImg) {
     m.charImg.img.style.display = "";
+    m.label.setAttribute("visibility", "hidden"); // [UI 2026-09-27] 画像を差し替える間は名前ラベルを隠す（読めなければerrorで再表示）
     m.charImg.img.setAttribute("href", charFaceSrc(displayCharId));
   }
 }
