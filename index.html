@@ -2678,22 +2678,30 @@ function buildBoardCells() {
       const isPermanentWall = walls.has(k);
       const tempWallRemain = tempWalls.get(k);
       const isTempWall = tempWallRemain != null;
-      const baseFill = isPermanentWall ? "var(--wall)" : isTempWall ? "var(--temp-wall)" :
+      const baseFill = isPermanentWall ? "var(--wall)" :
         (row < NEUTRAL_ROW_START ? "var(--empty-p1)" : row > NEUTRAL_ROW_END ? "var(--empty-p2)" : "var(--empty-neutral)");
       const poly = el("polygon", {
         points: pts,
         fill: baseFill,
-        stroke: isPermanentWall ? "var(--wall-edge)" : isTempWall ? "var(--temp-wall-edge)" : "var(--grid-line)",
-        "stroke-width": isTempWall ? "2" : "1",
+        stroke: isPermanentWall ? "var(--wall-edge)" : "var(--grid-line)",
+        "stroke-width": "1",
       });
-      if (isTempWall) poly.setAttribute("stroke-dasharray", "5,3");
       gBase.appendChild(poly);
       baseFillCells.set(k, poly);
 
+      // [バグ修正 2026-09-26] UC報告「消えるはずの壁が0になっても前のラウンドのカウント表示のまま
+      // 見た目だけ残る（判定は残っていない）」。以前は一時壁の色・残りtick数を土台のpolygon自体に
+      // 焼き込んでいたため、次ラウンドの戦闘再生中に壁が消えても（#gTempWallsのマーカーは正しく消える）
+      // その下の土台に配置画面時点の表示が残っていた。配置画面用の一時壁表示は別要素
+      // （.temp-wall-static）に分け、戦闘画面の間は隠す（enterBattleMode/exitBattleMode参照）
       if (isTempWall) {
-        const wallCountLabel = el("text", { x, y: y + 5, "text-anchor": "middle", class: "temp-wall-count" });
+        const tempPoly = el("polygon", {
+          points: pts, fill: "var(--temp-wall)", stroke: "var(--temp-wall-edge)",
+          "stroke-width": "2", "stroke-dasharray": "5,3", class: "temp-wall-static",
+        });
+        const wallCountLabel = el("text", { x, y: y + 5, "text-anchor": "middle", class: "temp-wall-count temp-wall-static" });
         wallCountLabel.textContent = tempWallRemain;
-        gBase.appendChild(wallCountLabel);
+        gBase.append(tempPoly, wallCountLabel);
       }
 
       const overlay = el("polygon", { points: pts, fill: "transparent", "pointer-events": "none" });
@@ -2855,6 +2863,10 @@ function seedTrapMarkersFromPersistent() {
 // 再生できない。代わりにwallStatesByTick（tick単位で計算済みの「その時点の残りtickスナップショット」）
 // を再生の情報源にする（reveal/disguiseAsと同じく、ログ・事前計算値だけを頼りにする既存方針を踏襲）
 const tempWallMarkerEls = new Map(); // key(col,row) -> {poly, text}
+// [バグ修正 2026-09-26] 配置画面用の一時壁表示（buildBoardCells()が描く.temp-wall-static）の表示切替
+function setStaticTempWallsVisible(visible) {
+  for (const n of gBase.querySelectorAll(".temp-wall-static")) n.setAttribute("visibility", visible ? "visible" : "hidden");
+}
 function renderTempWallMarkers(activeMap) {
   for (const k of [...tempWallMarkerEls.keys()]) {
     if (!activeMap.has(k)) {
@@ -4238,6 +4250,7 @@ function enterBattleMode() {
   }
 
   battleMode = true;
+  setStaticTempWallsVisible(false); // [バグ修正 2026-09-26] 戦闘中は#gTempWallsのtick別マーカーだけを一時壁の表示にする
   gMarkers.setAttribute("visibility", "hidden");
   gDragPreview.innerHTML = ""; // [Block C] 万一ドラッグ中に戦闘へ入っても残らないように
   gDragPreview.setAttribute("visibility", "hidden");
@@ -4262,6 +4275,7 @@ function exitBattleMode() {
   // （buildBoardCells()がisWall()経由で反映）で十分なので、戦闘画面を抜けたら消す
   gTempWalls.innerHTML = "";
   tempWallMarkerEls.clear();
+  setStaticTempWallsVisible(true); // [バグ修正 2026-09-26]
   gMarkers.setAttribute("visibility", "visible");
   gDragPreview.setAttribute("visibility", "visible");
   document.getElementById("playbackControls").style.display = "none";
