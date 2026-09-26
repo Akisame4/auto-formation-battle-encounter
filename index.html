@@ -692,6 +692,13 @@
   .opp-deck-grid .h-icon.p1 { background: linear-gradient(160deg, var(--p1), var(--p1-dark)); }
   .opp-deck-grid .opp-deck-unknown { background: #20242f; border: 1px dashed #4a5166; color: var(--text-faint); font-size: 1em; }
   #oppDeckPlacement { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--panel-border); }
+  /* [UI 2026-09-27] マップ・デッキを変えて再戦の準備画面 */
+  .rematch-setup-modal { width: min(460px, 100%); }
+  .rematch-setup-title { font-weight: 700; }
+  .rematch-setup-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+  .rematch-setup-label { font-size: 0.8em; font-weight: 700; color: var(--accent); margin-top: 4px; }
+  .rematch-setup-note { font-size: 0.78em; color: var(--text-dim); }
+  #rematchSetupScrim .deck-slot-card.locked { cursor: default; opacity: 0.75; }
   .deck-slot-faces-empty { grid-column: 1 / -1; font-size: 0.74em; color: var(--text-faint); }
   .deck-slot-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
   .deck-slot-radio { width: 15px; height: 15px; border-radius: 50%; border: 2px solid #5c6479; flex-shrink: 0; }
@@ -1040,9 +1047,29 @@
       <div class="match-result-rematch-status" id="matchResultRematchStatus" style="display:none;"></div>
       <div class="match-result-actions">
         <button id="rematchBtn" class="btn-primary-lg">再戦する</button>
+        <button id="rematchChangeBtn" class="close-btn">マップ・デッキを変えて再戦</button>
         <button id="acceptRematchBtn" class="btn-primary-lg" style="display:none;">再戦を受け入れる</button>
         <button id="cancelRematchBtn" class="close-btn" style="display:none;">申し込みを取り消す</button>
         <button id="goHomeBtn" class="close-btn">ホームに戻る</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- [UI 2026-09-27] UC要望「マップとデッキを変えて再戦」。再戦（変更あり）成立後に両者に出す準備画面 -->
+  <div class="scrim" id="rematchSetupScrim">
+    <div class="shop-modal rematch-setup-modal">
+      <div class="shop-modal-head"><span class="rematch-setup-title">再戦の準備（マップ・デッキ）</span></div>
+      <div class="rematch-setup-body">
+        <div class="rematch-setup-label">マップ</div>
+        <select id="rematchMapSelect" class="lobby-map-select"></select>
+        <div id="rematchMapNote" class="rematch-setup-note"></div>
+        <div class="rematch-setup-label">自分のデッキ</div>
+        <div id="rematchDeckList" class="deck-slot-list"></div>
+        <div id="rematchSetupStatus" class="rematch-setup-note"></div>
+      </div>
+      <div class="deck-edit-actions">
+        <button id="rematchSetupLeaveBtn" class="close-btn">やめてホームに戻る</button>
+        <button id="rematchSetupReadyBtn" class="lobby-btn lobby-btn-primary">決定</button>
       </div>
     </div>
   </div>
@@ -1130,6 +1157,20 @@ async function loadDecks() {
     ? activeDeck.characterIds : CHARACTERS.map(c => c.id);
 }
 
+// [UI 2026-09-26] デッキの中身を顔アイコンで一覧表示（読み込み失敗時は下の文字アイコンを見せる）。
+// デッキ画面と再戦準備画面（renderRematchSetup）で共用
+function deckFacesHtml(slot) {
+  if (!slot || !slot.characterIds || !slot.characterIds.length) {
+    return `<span class="deck-slot-faces-empty">キャラが入っていません</span>`;
+  }
+  return slot.characterIds.map(id => {
+    const char = getCharacter(id);
+    if (!char) return "";
+    return `<div class="h-icon" title="${char.name}">${CHAR_ICON[id] || ""}` +
+      `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="this.style.display='none'"></div>`;
+  }).join("");
+}
+
 function renderDeckScreen() {
   const container = document.getElementById("deckSlotList");
   container.innerHTML = "";
@@ -1140,15 +1181,7 @@ function renderDeckScreen() {
     card.className = "deck-slot-card" + (isActive ? " active" : "");
     const name = slot ? slot.name : `デッキ${i + 1}（未作成）`;
     const count = slot && slot.characterIds ? slot.characterIds.length : 0;
-    // [UI 2026-09-26] 中身のキャラを顔アイコンで一覧表示（読み込み失敗時は下の文字アイコンを見せる）
-    const faces = count
-      ? slot.characterIds.map(id => {
-          const char = getCharacter(id);
-          if (!char) return "";
-          return `<div class="h-icon" title="${char.name}">${CHAR_ICON[id] || ""}` +
-            `<img class="h-icon-img" src="${charFaceSrc(id)}" alt="" onerror="this.style.display='none'"></div>`;
-        }).join("")
-      : `<span class="deck-slot-faces-empty">キャラが入っていません</span>`;
+    const faces = deckFacesHtml(slot);
     card.innerHTML =
       `<div class="deck-slot-radio"></div>` +
       `<div class="deck-slot-info"><div class="deck-slot-name">${name}</div>` +
@@ -4288,6 +4321,7 @@ function showMatchResultPopup(winner, reasonLabel) {
 // [UI 2026-09-05] resetBtn（開発用「全てリセット」）と再戦ボタンで共用するゲーム状態の初期化
 function resetGameState() {
   clearSeenChars(); // [UI 2026-09-26] 新しい試合では相手のデッキ表示もリセット
+  shownBattleResult = null; // [2026-09-27] 前の試合の決着表示を持ち越さない（再戦準備画面を閉じた時の判定にも使う）
   resetBasesToFixedPositions();
   units.length = 0;
   queue.player1 = [];
@@ -4988,12 +5022,34 @@ function handleRoomUpdate(snap) {
     render();
   }
   updateMatchResultButtons();
+  renderRematchSetup(); // [UI 2026-09-27]
+
+  // [UI 2026-09-27] マップ・デッキを変えて再戦: 両者が準備画面で「決定」したら、ホストが1回のupdate()で
+  // 新しい試合を開始する（通常の再戦の受け入れと同じくmatchCountを進め、両者がそれぞれresetGameState()する。
+  // 新しいマップは同じ書き込みでmapIdに反映されるので、次のスナップショット冒頭のsetMap()で双方に適用される）
+  const setup = data.rematchSetup;
+  if (myRole === "player1" && setup && setup.ready && setup.ready.player1 && setup.ready.player2) {
+    update(roomRef, {
+      status: "placing", seed: null, placements: null,
+      rematchRequestBy: null, rematchKind: null, rematchSetup: null,
+      mapId: setup.mapId || data.mapId || "classic",
+      matchCount: matchCount + 1,
+    }).catch(() => {});
+  }
+
+  // [バグ修正 2026-09-27] Firebaseは自分の書き込みの通知をupdate()の呼び出し中に同期的に届けることがあり、
+  // その場合はこの関数が入れ子で呼ばれて新しい状態（例: 再戦成立→resetGameState()）を先に処理し終えている。
+  // ここで古いdataのまま続けると、リセット後の(battleMode=false)状態に対して前の試合のstatus:"battle"・seed・
+  // placementsでstartBattleFromRoom()が走り、前の試合の最後の戦闘が再生されてしまう（ホスト側だけで発生）。
+  // 入れ子の呼び出しで新しいスナップショットを処理済みなら、この古いスナップショットの処理は打ち切る
+  if (latestRoomData !== data) return;
 
   // ホスト側だけが両者ready検出時にseedを発行し開戦させる（書き込み競合を避けるための単独責任）
   if (myRole === "player1" && myReady && opponentReady && data.status !== "battle") {
     update(roomRef, { status: "battle", seed: Date.now() % 2147483647 });
   }
 
+  if (latestRoomData !== data) return; // [バグ修正 2026-09-27] 同上（上のupdate()による入れ子の呼び出し対策）
   if (data.status === "battle" && data.seed != null && !battleMode) {
     startBattleFromRoom(placements, data.seed);
   }
@@ -5063,6 +5119,9 @@ async function createRoom() {
     if (!snap.exists()) { code = candidate; break; }
   }
   if (!code) { lobbyMsg("ルームコードの発行に失敗しました。もう一度お試しください。"); return; }
+  // [バグ修正 2026-09-27] UC報告「一度ホームに戻って同じ人と対戦し直すと、前の対戦の最後の戦闘フェイズに
+  // 戻る（片方だけ・ルームに入ってすぐ）」。新しい試合の入口では、手元に残っている前の試合の状態を必ず消す
+  resetGameState();
 
   // [UI 2026-09-19] マップ追加。ホストが選んだマップをルームに書き込み、双方に適用する
   const mapId = document.getElementById("mapSelect").value;
@@ -5088,9 +5147,19 @@ async function joinRoom(code) {
   const isRejoin = saved && saved.code === code && saved.role === "player2";
   if (data.guestOnline && !isRejoin) { lobbyMsg("このルームはすでに満員です。"); return; }
 
+  // [バグ修正 2026-09-27] 前の試合が終わった（途中で相手が抜けた）ままのルームに新しく入ると、ルームには
+  // status:"battle"・seed・前の試合のplacementsが残っているため、handleRoomUpdate()が前の試合の最後の
+  // 戦闘をそのまま再生してしまっていた。自動復帰（isRejoin）以外で待機中でないルームに入った場合は、
+  // ルームを新しい試合としてやり直す（matchCountを進めるので、ルームに残っている相手側も自分でリセットする）
+  const staleMatch = !isRejoin && data.status !== "waiting";
+  resetGameState();
   await update(ref(db, `rooms/${code}`), {
     guestOnline: true,
-    status: data.status === "waiting" ? "placing" : data.status,
+    status: data.status === "waiting" || staleMatch ? "placing" : data.status,
+    ...(staleMatch ? {
+      seed: null, placements: null, rematchRequestBy: null, rematchKind: null, rematchSetup: null,
+      matchCount: (data.matchCount || 0) + 1,
+    } : {}),
   });
   regenerateRound1Pool(Date.now()); // [デッキ機能] 自分のデッキから独立に抽選
   enterRoom(code, "player2");
@@ -5151,14 +5220,28 @@ document.getElementById("rematchBtn").addEventListener("click", () => {
     render();
     return;
   }
-  update(ref(db, `rooms/${roomCode}`), { rematchRequestBy: myRole }).catch(() => {});
+  update(ref(db, `rooms/${roomCode}`), { rematchRequestBy: myRole, rematchKind: "same" }).catch(() => {});
+});
+// [UI 2026-09-27] UC要望「マップとデッキを変えて再戦」。申し込み→受け入れまでは通常の再戦と同じで、
+// 受け入れると両者に準備画面（renderRematchSetup）が出る
+document.getElementById("rematchChangeBtn").addEventListener("click", () => {
+  if (!roomCode || !myRole) return;
+  update(ref(db, `rooms/${roomCode}`), { rematchRequestBy: myRole, rematchKind: "change" }).catch(() => {});
 });
 document.getElementById("cancelRematchBtn").addEventListener("click", () => {
   if (!roomCode) return;
-  update(ref(db, `rooms/${roomCode}`), { rematchRequestBy: null }).catch(() => {});
+  update(ref(db, `rooms/${roomCode}`), { rematchRequestBy: null, rematchKind: null }).catch(() => {});
 });
 document.getElementById("acceptRematchBtn").addEventListener("click", () => {
   if (!roomCode || !myRole) return;
+  if (latestRoomData && latestRoomData.rematchKind === "change") {
+    // [UI 2026-09-27] マップ・デッキ変更ありの再戦: まず両者を準備画面へ（試合のリセットは両者の決定後）
+    update(ref(db, `rooms/${roomCode}`), {
+      rematchRequestBy: null, rematchKind: null,
+      rematchSetup: { mapId: latestRoomData.mapId || currentMapId, ready: { player1: false, player2: false } },
+    }).catch(() => {});
+    return;
+  }
   const nextMatchCount = ((latestRoomData && latestRoomData.matchCount) || 0) + 1;
   // [バグ修正 2026-09-20] placements自体をnullで丸ごと消し、両者分の古い拠点・ユニット・
   // クレジット・ready状態を残さないようにする（1回のupdate()でアトミックに反映）
@@ -5167,6 +5250,7 @@ document.getElementById("acceptRematchBtn").addEventListener("click", () => {
     seed: null,
     placements: null,
     rematchRequestBy: null,
+    rematchKind: null, rematchSetup: null, // [UI 2026-09-27]
     matchCount: nextMatchCount,
   }).catch(() => {});
 });
@@ -5174,7 +5258,7 @@ document.getElementById("goHomeBtn").addEventListener("click", () => {
   document.getElementById("matchResultScrim").classList.remove("open");
   if (roomCode && myRole) {
     const onlineField = myRole === "player1" ? "hostOnline" : "guestOnline";
-    update(ref(db, `rooms/${roomCode}`), { [onlineField]: false, rematchRequestBy: null }).catch(() => {});
+    update(ref(db, `rooms/${roomCode}`), { [onlineField]: false, rematchRequestBy: null, rematchKind: null, rematchSetup: null }).catch(() => {});
   }
   resetGameState();
   leaveRoomLocal();
@@ -5187,25 +5271,100 @@ function updateMatchResultButtons() {
   const acceptBtn = document.getElementById("acceptRematchBtn");
   const cancelBtn = document.getElementById("cancelRematchBtn");
   const statusEl = document.getElementById("matchResultRematchStatus");
+  const changeBtn = document.getElementById("rematchChangeBtn"); // [UI 2026-09-27]
   if (!roomCode || !myRole) {
     // オフライン: 従来通りシンプルな「再戦する」ボタンのみ
+    changeBtn.style.display = "none";
     rematchBtn.style.display = ""; rematchBtn.textContent = "再戦する";
     acceptBtn.style.display = "none"; cancelBtn.style.display = "none"; statusEl.style.display = "none";
     return;
   }
   const oppRole = myRole === "player1" ? "player2" : "player1";
   const requestedBy = latestRoomData && latestRoomData.rematchRequestBy;
+  const isChange = latestRoomData && latestRoomData.rematchKind === "change";
   if (requestedBy === oppRole) {
-    rematchBtn.style.display = "none"; cancelBtn.style.display = "none";
-    acceptBtn.style.display = ""; statusEl.style.display = ""; statusEl.textContent = "相手が再戦を希望しています。";
+    rematchBtn.style.display = "none"; cancelBtn.style.display = "none"; changeBtn.style.display = "none";
+    acceptBtn.style.display = ""; statusEl.style.display = "";
+    acceptBtn.textContent = isChange ? "受け入れる（マップ・デッキを選び直す）" : "再戦を受け入れる";
+    statusEl.textContent = isChange ? "相手がマップ・デッキを変えての再戦を希望しています。" : "相手が再戦を希望しています。";
   } else if (requestedBy === myRole) {
-    rematchBtn.style.display = "none"; acceptBtn.style.display = "none";
-    cancelBtn.style.display = ""; statusEl.style.display = ""; statusEl.textContent = "再戦を申し込みました。相手の応答を待っています…";
+    rematchBtn.style.display = "none"; acceptBtn.style.display = "none"; changeBtn.style.display = "none";
+    cancelBtn.style.display = ""; statusEl.style.display = "";
+    statusEl.textContent = (isChange ? "マップ・デッキを変えての再戦を" : "再戦を") + "申し込みました。相手の応答を待っています…";
   } else {
+    changeBtn.style.display = "";
     rematchBtn.style.display = ""; rematchBtn.textContent = "再戦を申し込む";
     acceptBtn.style.display = "none"; cancelBtn.style.display = "none"; statusEl.style.display = "none";
   }
 }
+
+// [UI 2026-09-27] マップ・デッキを変えて再戦の準備画面。ルームのrematchSetup（{mapId, ready:{player1,player2}}）
+// がある間だけ表示する。マップはロビーと同じくホストだけが選べ、デッキは各自が自分の保存済みデッキから選ぶ。
+// 「決定」すると自分の選択は固定され、両者の決定がそろった時点でホストが新しい試合を開始する（handleRoomUpdate）
+let rematchSetupWasOpen = false;
+function renderRematchSetup() {
+  const scrim = document.getElementById("rematchSetupScrim");
+  const setup = roomCode && latestRoomData && latestRoomData.rematchSetup;
+  if (!setup) {
+    scrim.classList.remove("open");
+    // 相手が準備画面から抜けた場合は試合終了ポップアップに戻す（新しい試合が始まった場合はshownBattleResultが空）
+    if (rematchSetupWasOpen && shownBattleResult) document.getElementById("matchResultScrim").classList.add("open");
+    rematchSetupWasOpen = false;
+    return;
+  }
+  rematchSetupWasOpen = true;
+  document.getElementById("matchResultScrim").classList.remove("open");
+  scrim.classList.add("open");
+  const oppRole = myRole === "player1" ? "player2" : "player1";
+  const ready = setup.ready || {};
+  const iAmReady = !!ready[myRole], oppReady = !!ready[oppRole];
+  const isHost = myRole === "player1";
+
+  const mapSel = document.getElementById("rematchMapSelect");
+  if (!mapSel.options.length) mapSel.innerHTML = document.getElementById("mapSelect").innerHTML;
+  mapSel.value = setup.mapId || currentMapId;
+  mapSel.disabled = !isHost || iAmReady;
+  document.getElementById("rematchMapNote").textContent = isHost
+    ? (iAmReady ? "マップを決定しました。" : "マップはホスト（あなた）が選びます。")
+    : "マップはホストが選びます。";
+
+  const list = document.getElementById("rematchDeckList");
+  list.innerHTML = "";
+  for (let i = 0; i < DECK_SLOT_COUNT; i++) {
+    const slot = deckState.slots[i];
+    if (!slot || !slot.characterIds || !slot.characterIds.length) continue; // 未作成・空のデッキは選べない
+    const card = document.createElement("div");
+    card.className = "deck-slot-card" + (deckState.activeSlot === i ? " active" : "") + (iAmReady ? " locked" : "");
+    card.innerHTML =
+      `<div class="deck-slot-radio"></div>` +
+      `<div class="deck-slot-info"><div class="deck-slot-name">${slot.name}</div>` +
+      `<div class="deck-slot-count">${slot.characterIds.length}/${DECK_SIZE}体</div></div>` +
+      `<div class="deck-slot-faces">${deckFacesHtml(slot)}</div>`;
+    if (!iAmReady) card.addEventListener("click", async () => { await selectActiveSlot(i); renderRematchSetup(); });
+    list.appendChild(card);
+  }
+
+  const readyBtn = document.getElementById("rematchSetupReadyBtn");
+  readyBtn.disabled = iAmReady;
+  readyBtn.textContent = iAmReady ? "決定済み" : "決定";
+  document.getElementById("rematchSetupStatus").textContent =
+    iAmReady && oppReady ? "両者決定。新しい試合を始めます…" :
+    iAmReady ? "相手の決定を待っています…" :
+    oppReady ? "相手は決定済みです。" : "相手も選んでいます…";
+}
+document.getElementById("rematchMapSelect").addEventListener("change", (e) => {
+  if (!roomCode || myRole !== "player1") return;
+  update(ref(db, `rooms/${roomCode}/rematchSetup`), { mapId: e.target.value }).catch(() => {});
+});
+document.getElementById("rematchSetupReadyBtn").addEventListener("click", () => {
+  if (!roomCode || !myRole) return;
+  update(ref(db, `rooms/${roomCode}/rematchSetup/ready`), { [myRole]: true }).catch(() => {});
+});
+document.getElementById("rematchSetupLeaveBtn").addEventListener("click", () => {
+  document.getElementById("rematchSetupScrim").classList.remove("open");
+  rematchSetupWasOpen = false;
+  document.getElementById("goHomeBtn").click();
+});
 
 // ページ読み込み時、直前に参加していたルームが残っていれば自動復帰する（[P5] 切断・リロード対策）。
 // [デッキ機能] 復帰の場合はデッキ画面を経由せずそのまま復帰処理へ入る。新規セッションの場合のみ

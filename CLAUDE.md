@@ -566,3 +566,11 @@ UCから「見た目も操作性もUIを整えたい、まずロビーから」�
 - **[2026-09-26] 配置画面の右パネルにスキル名＋マウスオーバーで詳細／相手のデッキアイコンにも詳細**: UC要望。`skillPillsHtml(skills, withTips)`に第2引数を追加し、trueのときピルごとの`title`に「スキル名: 説明」を入れる（`.skill-pill.has-tip`はcursor:help）。自分のキャラ選択時のパネルにスキルピルを新設、相手キャラ選択時のパネルも詳細付きに。ショップ・デッキ編成カードは従来通りカード全体のtitle（2026-09-05のUC判断を維持）。相手のデッキの判明アイコンは`title`に「名前（HP・攻・行動力）＋全スキル説明」。属性値は`escapeAttr()`でエスケープ。ネイティブtitleなのでタッチ端末では出ない点に注意
 
 - **[2026-09-26] スマホでもタップでスキル説明**: UC要望。スキルピル（`withTips`）と相手のデッキの判明アイコンに`data-tip`を付け、documentのclick委譲で`#tapTip`（position:fixed、画面内に収まるよう位置補正、下に入らなければ上に出す）を表示。同じ要素の再タップ・他の場所のタップ・スクロール・Escで閉じる。PCのtitleマウスオーバーも併用。ヘッドレスChromeのタッチエミュレーション（Input.dispatchTouchEvent、幅500px）でタップ表示・再タップで閉じる・相手アイコン・他所タップで閉じる、を確認
+
+- **[2026-09-27] バグ修正「ホームに戻って同じ人と再戦すると前の試合の最後の戦闘に戻る」＋「マップ・デッキを変えて再戦」追加**
+  - UC報告の手順（終了ポップアップの「ホームに戻る」→デッキ編成を経由→新しいルーム、片方だけ・入室直後）は2タブ実機テストでは再現できなかったが、同じ症状になる経路を2つ特定して修正:
+    1. **handleRoomUpdate()の入れ子呼び出し**: Firebaseは自分のupdate()の通知を呼び出し中に同期的に届けることがあり、ハンドラ内のupdate()（開戦・再戦成立など）で入れ子のhandleRoomUpdate()が新しい状態（resetGameState()等）を先に処理→外側が古い`data`（status:"battle"・seed・前の試合のplacements）のまま続行→`!battleMode`になっているため前の試合の戦闘を再生、という流れ（ホスト側だけで起きる）。`latestRoomData !== data`なら外側の処理を打ち切るガードを2箇所に追加
+    2. **終わったままのルームへの入室**: 相手が抜けたルームに（同じ合言葉で）入ると、残っていたstatus:"battle"等で前の試合を再生していた。`joinRoom()`で自動復帰以外かつ待機中でないルームなら、seed/placements/rematch系をクリアしmatchCountを進めて新しい試合にする（残っている相手もmatchCount変化で自分をリセット）
+    - 加えて`createRoom()`/`joinRoom()`の入口で必ず`resetGameState()`（手元の前の試合の状態を持ち込まない）。`resetGameState()`は`shownBattleResult`もクリアするようにした
+  - **マップ・デッキを変えて再戦**（UC選択: 申込→受入→準備画面）: 終了ポップアップに「マップ・デッキを変えて再戦」（`#rematchChangeBtn`、オンラインのみ）。ルームに`rematchKind:"change"`で申し込み、受け入れると`rematchSetup:{mapId, ready:{player1,player2}}`を作成し両者に準備画面（`#rematchSetupScrim`、`renderRematchSetup()`）を表示。マップはホストのみ選択（ロビーと同じルール）、デッキは各自が保存済みデッキから選択（`selectActiveSlot()`、顔アイコンは`deckFacesHtml()`を共用）。両者「決定」でホストが1回のupdate()で status/placing・placements/seed/rematch系クリア・mapId反映・matchCount+1 → 両者resetGameState()（新デッキから再抽選）。「やめてホームに戻る」で抜けると相手は終了ポップアップに戻る
+  - 検証: ヘッドレスChrome 2タブ＋本物のFirebaseで、①抜けたルームに同じ合言葉で再入室→両者R1配置画面、②変更あり再戦の申込表示・受入・準備画面（ホストのみマップ変更可、ゲストに即反映）・両者決定→両者R1配置・新マップ、③準備画面から片方が抜ける→相手は終了ポップアップ、④通常の新ルーム対戦の開戦に回帰なし、を確認
