@@ -546,6 +546,9 @@
     100% { opacity: 0; }
   }
   .atk-line { animation: atkFlash 0.35s ease-out forwards; pointer-events: none; }
+  /* [UI 2026-09-26] 指示忘れ防止: 「この場を守る」のまま、またはこのラウンドでまだ指示していない自分のキャラを点滅リングで示す */
+  .order-missing-ring { fill: none; stroke: #ffd479; stroke-width: 3; animation: orderMissingBlink 0.9s ease-in-out infinite; }
+  @keyframes orderMissingBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.1; } }
   @keyframes deathFade {
     0% { opacity: 1; transform: scale(1); }
     100% { opacity: 0; transform: scale(0.3); }
@@ -2972,6 +2975,12 @@ function renderDragPreview() {
 let overviewMode = true;
 const ORDER_LINE_FAINT_OPACITY = 0.32; // 選択していないキャラの指示線の薄さ（全軍俯瞰ON時）
 
+// [UI 2026-09-26] 指示忘れ防止の点滅対象か（render()参照）。orderedRoundは指示を出したラウンド番号で、
+// advanceToNextRound()でユニットを作り直す際に引き継がないため、次ラウンドでは自然に未指示扱いに戻る
+function needsOrderAttention(unit) {
+  return unit.purpose === "guard" || unit.orderedRound !== currentRound;
+}
+
 function render() {
   // 空きマス色 + 壁は固定なので base 層は初期描画のみで良いが、
   // 自陣オーバーレイ・拠点/キャラマーカーは毎回更新する。
@@ -3038,6 +3047,14 @@ function render() {
     // 元々どちらもマーカー上部に置いていたため衝突していた。下に逃がす案も検討したが、縦に隣接配置
     // すると今度は下のキャラの顔と衝突するため、マーカー右下の角に小さいバッジとして固定表示する
     // 方式にした（毒状態アイコン等、他所で使っている「角に小さい印を置く」パターンを踏襲）
+    // [UI 2026-09-26] UC要望「指示忘れは防止したい。指示出していないキャラは点滅するなどしてわかりやすく」。
+    // UC確認済みの条件: ①「この場を守る」のキャラはすべて（指示を解除したキャラも含む）、②前ラウンドから
+    // 引き継いだキャラも毎ラウンド、そのラウンドで指示し直すまで点滅（unit.orderedRound !== currentRound）
+    if (isOwn && needsOrderAttention(unit)) {
+      gMarkers.appendChild(el("circle", {
+        cx: x, cy: y, r: (HEX_SIZE * 0.62 + 3.5).toFixed(1), class: "order-missing-ring", "pointer-events": "none",
+      }));
+    }
     gMarkers.append(circle, label);
     appendCharMarkerImage(gMarkers, displayChar.id, x, y, HEX_SIZE * 0.62, `p-${unit.id}`); // [UI 2026-08-25] / [UI 2026-09-02] r拡大
     if (isOwn) {
@@ -3260,6 +3277,12 @@ function renderUnitEditPanel() {
   }
   html += `<div class="hint">${purposeLine}</div>`;
   html += `<div class="hint">キャラからドラッグして指示を変更できます。</div>`;
+  // [UI 2026-09-26] UC要望「指示解除が出来るようにしてほしい（全軍突撃させたけどこいつは動かしたくない／
+  // 指示を出してしまって直せない）」。自分のマスへドラッグし直せば「この場を守る」に戻せたが分かりにくいため、
+  // 配置直後のデフォルトである「この場を守る」へ戻すボタンを用意した
+  if (unit.purpose !== "guard") {
+    html += `<button id="clearOrderBtn" class="close-btn">指示を解除（この場を守る）</button>`;
+  }
   if (needsFacing(char)) {
     html += `<div class="facing-row" id="directionGrid"></div>`;
   }
@@ -3277,6 +3300,15 @@ function renderUnitEditPanel() {
   html += `<div class="inspector-spacer"></div>`;
   html += `<button id="deselectUnitBtn" class="close-btn">選択解除</button>`;
   content.innerHTML = html;
+
+  const clearOrderBtn = content.querySelector("#clearOrderBtn");
+  if (clearOrderBtn) clearOrderBtn.addEventListener("click", () => {
+    unit.purpose = "guard";
+    unit.waypoints = null;
+    unit.orderedRound = currentRound;
+    showStatus(`${char.name}の指示を解除しました（この場を守る）。`);
+    render();
+  });
 
   const returnUnitBtn = content.querySelector("#returnUnitBtn");
   if (returnUnitBtn) returnUnitBtn.addEventListener("click", () => returnPlacedUnit(unit.id));
@@ -3527,6 +3559,7 @@ function applyDragInstruction(unit, path, release) {
   selectedUnitId = unit.id;
   playSE("drag"); // [UI 2026-09-19] 指示確定（guard/gotoいずれの場合も1回だけ鳴らす）
 
+  unit.orderedRound = currentRound; // [UI 2026-09-26] 指示忘れ防止の点滅判定用
   if (release.col === unit.col && release.row === unit.row) {
     unit.purpose = "guard";
     unit.waypoints = null;
@@ -3612,7 +3645,7 @@ document.getElementById("coordToggle").addEventListener("change", (e) => {
 document.getElementById("rushAllBtn").addEventListener("click", () => {
   const mine = units.filter(u => u.owner === currentPlayer);
   if (mine.length === 0) { showStatus("配置済みのキャラがいません。"); return; }
-  for (const u of mine) { u.purpose = "rush"; u.waypoints = null; }
+  for (const u of mine) { u.purpose = "rush"; u.waypoints = null; u.orderedRound = currentRound; }
   selectedUnitId = null;
   showStatus(`自分の全キャラ（${mine.length}体）の指示を「相手拠点へ突撃」に設定しました。`);
   render();
