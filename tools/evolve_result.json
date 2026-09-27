@@ -1,0 +1,1641 @@
+{
+ "updated": "2026-09-27T06:04:24.699Z",
+ "settings": {
+  "GENS": 12,
+  "POP": 12,
+  "ELITE": 4,
+  "MATCHES": 16
+ },
+ "best": {
+  "defPerBase": [
+   0,
+   2,
+   2,
+   1
+  ],
+  "guardRadius": 3,
+  "nearWeight": 80,
+  "targetNoise": 26,
+  "atkRangedRatio": 0,
+  "atkPick": "strong",
+  "atkGoal": "rush",
+  "supportDist": 1
+ },
+ "history": [
+  {
+   "gen": 1,
+   "top": [
+    {
+     "winRate": 0.688,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.75,
+      "v2": 0.69,
+      "habitLeft": 0.56,
+      "habitRight": 0.69
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.688,
+     "byOpp": {
+      "rushAll": 0.63,
+      "v1": 0.81,
+      "v2": 0.56,
+      "habitLeft": 0.75,
+      "habitRight": 0.69
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 47,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.65,
+     "byOpp": {
+      "rushAll": 0.63,
+      "v1": 0.75,
+      "v2": 0.69,
+      "habitLeft": 0.56,
+      "habitRight": 0.63
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       2,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 47,
+      "targetNoise": 32,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.625,
+     "byOpp": {
+      "rushAll": 0.69,
+      "v1": 0.81,
+      "v2": 0.56,
+      "habitLeft": 0.63,
+      "habitRight": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.613,
+     "byOpp": {
+      "rushAll": 0.63,
+      "v1": 0.88,
+      "v2": 0.56,
+      "habitLeft": 0.44,
+      "habitRight": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 3
+     }
+    }
+   ]
+  },
+  {
+   "gen": 2,
+   "top": [
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.94,
+      "v2": 0.63,
+      "habitLeft": 0.56,
+      "habitRight": 0.56,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.646,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.81,
+      "v2": 0.56,
+      "habitLeft": 0.5,
+      "habitRight": 0.69,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.625,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.63,
+      "v2": 0.5,
+      "habitLeft": 0.69,
+      "habitRight": 0.69,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       2,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 47,
+      "targetNoise": 32,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.62,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.81,
+      "v2": 0.5,
+      "habitLeft": 0.59,
+      "habitRight": 0.63,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.615,
+     "byOpp": {
+      "rushAll": 1,
+      "v1": 0.81,
+      "v2": 0.38,
+      "habitLeft": 0.56,
+      "habitRight": 0.5,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "efficient",
+      "atkGoal": "rush",
+      "supportDist": 3
+     }
+    }
+   ]
+  },
+  {
+   "gen": 3,
+   "top": [
+    {
+     "winRate": 0.698,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.81,
+      "v2": 0.44,
+      "habitLeft": 0.81,
+      "habitRight": 0.69,
+      "champ": 0.69
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.81,
+      "v2": 0.56,
+      "habitLeft": 0.69,
+      "habitRight": 0.69,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.81,
+      "v2": 0.75,
+      "habitLeft": 0.5,
+      "habitRight": 0.63,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 122,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 3
+     }
+    },
+    {
+     "winRate": 0.646,
+     "byOpp": {
+      "rushAll": 0.5,
+      "v1": 0.94,
+      "v2": 0.81,
+      "habitLeft": 0.44,
+      "habitRight": 0.44,
+      "champ": 0.75
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.641,
+     "byOpp": {
+      "rushAll": 0.66,
+      "v1": 0.88,
+      "v2": 0.5,
+      "habitLeft": 0.63,
+      "habitRight": 0.69,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    }
+   ]
+  },
+  {
+   "gen": 4,
+   "top": [
+    {
+     "winRate": 0.646,
+     "byOpp": {
+      "rushAll": 0.63,
+      "v1": 0.75,
+      "v2": 0.5,
+      "habitLeft": 0.75,
+      "habitRight": 0.69,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.646,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 1,
+      "v2": 0.44,
+      "habitLeft": 0.63,
+      "habitRight": 0.63,
+      "champ": 0.38
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 122,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 3
+     }
+    },
+    {
+     "winRate": 0.615,
+     "byOpp": {
+      "rushAll": 0.63,
+      "v1": 0.88,
+      "v2": 0.63,
+      "habitLeft": 0.63,
+      "habitRight": 0.38,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 106,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "efficient",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.615,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.75,
+      "v2": 0.56,
+      "habitLeft": 0.56,
+      "habitRight": 0.5,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.583,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.88,
+      "v2": 0.44,
+      "habitLeft": 0.5,
+      "habitRight": 0.38,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 40,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    }
+   ]
+  },
+  {
+   "gen": 5,
+   "top": [
+    {
+     "winRate": 0.719,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.88,
+      "v2": 0.75,
+      "habitLeft": 0.44,
+      "habitRight": 0.63,
+      "champ": 0.75
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.688,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.75,
+      "v2": 0.69,
+      "habitLeft": 0.75,
+      "habitRight": 0.75,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.667,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.75,
+      "v2": 0.56,
+      "habitLeft": 0.5,
+      "habitRight": 0.88,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.646,
+     "byOpp": {
+      "rushAll": 0.69,
+      "v1": 0.81,
+      "v2": 0.38,
+      "habitLeft": 0.69,
+      "habitRight": 0.75,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.625,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.81,
+      "v2": 0.38,
+      "habitLeft": 0.5,
+      "habitRight": 0.5,
+      "champ": 0.69
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       0,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 80,
+      "targetNoise": 37,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 3
+     }
+    }
+   ]
+  },
+  {
+   "gen": 6,
+   "top": [
+    {
+     "winRate": 0.667,
+     "byOpp": {
+      "rushAll": 0.94,
+      "v1": 1,
+      "v2": 0.56,
+      "habitLeft": 0.69,
+      "habitRight": 0.38,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.667,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.75,
+      "v2": 0.63,
+      "habitLeft": 0.69,
+      "habitRight": 0.56,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 88,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.656,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.88,
+      "v2": 0.69,
+      "habitLeft": 0.69,
+      "habitRight": 0.38,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.625,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.94,
+      "v2": 0.5,
+      "habitLeft": 0.44,
+      "habitRight": 0.5,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.625,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.69,
+      "v2": 0.56,
+      "habitLeft": 0.75,
+      "habitRight": 0.44,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0.12,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    }
+   ]
+  },
+  {
+   "gen": 7,
+   "top": [
+    {
+     "winRate": 0.708,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.88,
+      "v2": 0.81,
+      "habitLeft": 0.75,
+      "habitRight": 0.5,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.688,
+     "byOpp": {
+      "rushAll": 0.94,
+      "v1": 0.69,
+      "v2": 0.44,
+      "habitLeft": 0.63,
+      "habitRight": 0.63,
+      "champ": 0.81
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 3
+     }
+    },
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 0.94,
+      "v1": 0.88,
+      "v2": 0.5,
+      "habitLeft": 0.81,
+      "habitRight": 0.5,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 88,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.81,
+      "v2": 0.69,
+      "habitLeft": 0.75,
+      "habitRight": 0.63,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 1,
+      "v2": 0.56,
+      "habitLeft": 0.56,
+      "habitRight": 0.69,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       0,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 1,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    }
+   ]
+  },
+  {
+   "gen": 8,
+   "top": [
+    {
+     "winRate": 0.698,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.81,
+      "v2": 0.44,
+      "habitLeft": 0.88,
+      "habitRight": 0.75,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 3
+     }
+    },
+    {
+     "winRate": 0.688,
+     "byOpp": {
+      "rushAll": 0.69,
+      "v1": 0.81,
+      "v2": 0.63,
+      "habitLeft": 0.63,
+      "habitRight": 0.63,
+      "champ": 0.75
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 2,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.88,
+      "v2": 0.56,
+      "habitLeft": 0.69,
+      "habitRight": 0.56,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.656,
+     "byOpp": {
+      "rushAll": 0.94,
+      "v1": 0.69,
+      "v2": 0.75,
+      "habitLeft": 0.38,
+      "habitRight": 0.56,
+      "champ": 0.63
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 27,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.635,
+     "byOpp": {
+      "rushAll": 0.56,
+      "v1": 0.75,
+      "v2": 0.38,
+      "habitLeft": 0.75,
+      "habitRight": 0.81,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 85,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    }
+   ]
+  },
+  {
+   "gen": 9,
+   "top": [
+    {
+     "winRate": 0.75,
+     "byOpp": {
+      "rushAll": 0.94,
+      "v1": 0.94,
+      "v2": 0.44,
+      "habitLeft": 0.75,
+      "habitRight": 0.75,
+      "champ": 0.69
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 137,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.667,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.75,
+      "v2": 0.69,
+      "habitLeft": 0.56,
+      "habitRight": 0.75,
+      "champ": 0.38
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.656,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.94,
+      "v2": 0.63,
+      "habitLeft": 0.81,
+      "habitRight": 0.44,
+      "champ": 0.25
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.651,
+     "byOpp": {
+      "rushAll": 0.69,
+      "v1": 0.88,
+      "v2": 0.5,
+      "habitLeft": 0.5,
+      "habitRight": 0.59,
+      "champ": 0.75
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 27,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.635,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.88,
+      "v2": 0.63,
+      "habitLeft": 0.5,
+      "habitRight": 0.56,
+      "champ": 0.44
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       1,
+       1,
+       1
+      ],
+      "guardRadius": 1,
+      "nearWeight": 80,
+      "targetNoise": 25,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 3
+     }
+    }
+   ]
+  },
+  {
+   "gen": 10,
+   "top": [
+    {
+     "winRate": 0.719,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.94,
+      "v2": 0.5,
+      "habitLeft": 0.69,
+      "habitRight": 0.63,
+      "champ": 0.69
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 1,
+      "v1": 0.75,
+      "v2": 0.56,
+      "habitLeft": 0.69,
+      "habitRight": 0.44,
+      "champ": 0.63
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 93,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.667,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.94,
+      "v2": 0.63,
+      "habitLeft": 0.44,
+      "habitRight": 0.56,
+      "champ": 0.69
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 3
+     }
+    },
+    {
+     "winRate": 0.656,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.75,
+      "v2": 0.56,
+      "habitLeft": 0.69,
+      "habitRight": 0.63,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 120,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.635,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.75,
+      "v2": 0.38,
+      "habitLeft": 0.63,
+      "habitRight": 0.75,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 137,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    }
+   ]
+  },
+  {
+   "gen": 11,
+   "top": [
+    {
+     "winRate": 0.708,
+     "byOpp": {
+      "rushAll": 0.69,
+      "v1": 0.94,
+      "v2": 0.69,
+      "habitLeft": 0.88,
+      "habitRight": 0.56,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 120,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 2
+     }
+    },
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.94,
+      "v2": 0.38,
+      "habitLeft": 0.63,
+      "habitRight": 0.56,
+      "champ": 0.81
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "adjacent",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.667,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.88,
+      "v2": 0.5,
+      "habitLeft": 0.56,
+      "habitRight": 0.69,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 45,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.667,
+     "byOpp": {
+      "rushAll": 0.94,
+      "v1": 0.94,
+      "v2": 0.19,
+      "habitLeft": 0.63,
+      "habitRight": 0.69,
+      "champ": 0.63
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       0
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 120,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.646,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.94,
+      "v2": 0.44,
+      "habitLeft": 0.69,
+      "habitRight": 0.44,
+      "champ": 0.63
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    }
+   ]
+  },
+  {
+   "gen": 12,
+   "top": [
+    {
+     "winRate": 0.729,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 1,
+      "v2": 0.69,
+      "habitLeft": 0.69,
+      "habitRight": 0.63,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 26,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.698,
+     "byOpp": {
+      "rushAll": 0.88,
+      "v1": 0.75,
+      "v2": 0.75,
+      "habitLeft": 0.69,
+      "habitRight": 0.5,
+      "champ": 0.63
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       1
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 64,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.677,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.88,
+      "v2": 0.56,
+      "habitLeft": 0.5,
+      "habitRight": 0.63,
+      "champ": 0.69
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       1,
+       0
+      ],
+      "guardRadius": 3,
+      "nearWeight": 49,
+      "targetNoise": 120,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.667,
+     "byOpp": {
+      "rushAll": 0.75,
+      "v1": 0.88,
+      "v2": 0.75,
+      "habitLeft": 0.56,
+      "habitRight": 0.56,
+      "champ": 0.5
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       0
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 120,
+      "atkRangedRatio": 0,
+      "atkPick": "strong",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    },
+    {
+     "winRate": 0.646,
+     "byOpp": {
+      "rushAll": 0.81,
+      "v1": 0.88,
+      "v2": 0.63,
+      "habitLeft": 0.5,
+      "habitRight": 0.5,
+      "champ": 0.56
+     },
+     "genome": {
+      "defPerBase": [
+       0,
+       2,
+       2,
+       0
+      ],
+      "guardRadius": 3,
+      "nearWeight": 80,
+      "targetNoise": 84,
+      "atkRangedRatio": 0,
+      "atkPick": "efficient",
+      "atkGoal": "rush",
+      "supportDist": 1
+     }
+    }
+   ]
+  }
+ ]
+}

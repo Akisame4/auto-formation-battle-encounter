@@ -1145,7 +1145,7 @@
  * ==================================================================== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getDatabase, ref, set, update, get, onValue, onDisconnect, serverTimestamp,
+  getDatabase, ref, set, update, get, onValue, onDisconnect, serverTimestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -4366,6 +4366,7 @@ function showBattleResult() {
 // 再生終了後に流す。その画面にも再戦か、ホームに戻るボタンを作る」への対応。オンライン対戦中はmyRole、
 // オフライン単体テスト中はcurrentPlayer（デバッグ用の操作プレイヤー切替）を「自分」の視点とみなす
 function showMatchResultPopup(winner, reasonLabel) {
+  recordMatchForLearning(winner); // [CPU学習 2026-09-27] みんなの試合結果をCPUの学習データに足す
   const myPerspective = (roomCode && myRole) ? myRole : currentPlayer;
   const modal = document.getElementById("matchResultModal");
   const title = document.getElementById("matchResultTitle");
@@ -4384,6 +4385,7 @@ function showMatchResultPopup(winner, reasonLabel) {
 function resetGameState() {
   clearSeenChars(); // [UI 2026-09-26] 新しい試合では相手のデッキ表示もリセット
   surrenderHandled = false; // [UI 2026-09-27] 降参による試合終了の表示済みフラグ
+  matchCharsUsed = { player1: new Set(), player2: new Set() }; // [CPU学習 2026-09-27] この試合で戦場に出たキャラ
   cpuClearPending(); // [CPU戦 2026-09-27] CPUがこのラウンドに置いた（まだ開戦前で見せていない）キャラを捨てる
   shownBattleResult = null; // [2026-09-27] 前の試合の決着表示を持ち越さない（再戦準備画面を閉じた時の判定にも使う）
   resetBasesToFixedPositions();
@@ -4580,6 +4582,7 @@ function enterBattleMode() {
   battleMode = true;
   shownBattleResult = null;
   noteSeenChars(units); // [UI 2026-09-26] 開戦した瞬間に盤面に出た相手キャラ（偽装中は偽装先の姿）を記録
+  for (const u of units) if (matchCharsUsed[u.owner]) matchCharsUsed[u.owner].add(u.charId); // [CPU学習 2026-09-27]
   setPlaybackSpeed(1); // [UI 2026-09-26] 各ラウンドの戦闘は常に1倍速から始める（前ラウンドの倍速を持ち越さない）
   setStaticTempWallsVisible(false); // [バグ修正 2026-09-26] 戦闘中は#gTempWallsのtick別マーカーだけを一時壁の表示にする
   gMarkers.setAttribute("visibility", "hidden");
@@ -4821,8 +4824,6 @@ function advanceToNextRound() {
   if (!outcome || outcome._advanced) return;
   outcome._advanced = true;
   const nextRound = currentRound + 1;
-  // [CPU戦 2026-09-27] CPUが直前の戦闘から相手の攻め方・守り方を覚える（unitsが開戦時点のままのうちに）
-  if (cpuMode || cpuArenaMode) { cpuObserveBattle("player1"); cpuObserveBattle("player2"); }
 
   // [バグ修正 2026-09-05] 設計書§6-1: 全滅・拠点陥落は「そのラウンドの勝敗」ではなく試合そのものの
   // 即時終了条件（残り行動力・残りラウンドは処理しない）。1〜3Rでも次のラウンドには進めない。
@@ -4908,7 +4909,18 @@ function advanceToNextRound() {
     }).catch(() => {});
   }
   // [CPU戦 2026-09-27] 新しいラウンドの配置フェイズ開始時に、CPUが自分のプールを更新して購入・配置・指示を済ませる
-  if (cpuMode && !cpuArenaMode) { cpuRegeneratePool("player2", currentRound); cpuTakeTurn("player2"); }
+  // 先読みCPUは後半のラウンドで1〜2秒ほど考えるので、先に「考えています」を表示してから考え始める
+  if (cpuMode && !cpuArenaMode) {
+    cpuThinking = true;
+    showStatus("CPUが作戦を考えています…");
+    setTimeout(() => {
+      cpuRegeneratePool("player2", currentRound);
+      cpuTakeTurn("player2", cpuMatchStrategy || CPU_DEFAULT_STRATEGY);
+      cpuThinking = false;
+      showStatus(`R${currentRound}開始。配置フェイズです。`);
+      render();
+    }, 60);
+  }
 
   render();
 }
@@ -5399,16 +5411,85 @@ function updateMatchResultButtons() {
  * CPUの判断はラウンド開始時点の盤面（前ラウンドから残っているキャラ）だけを見て行い、プレイヤーが
  * このラウンドに新しく置いたキャラは見ない（オンラインで相手の新規配置が見えないのと同じ条件）
  * ==================================================================== */
+/* ==================== CPUの学習データ（2026-09-27、UC要望「どのPCからでも共通で、汎用的に強くなる方向に」） ====================
+ * Firebaseの /cpuLearn に、みんなの試合結果（CPU戦・人どうしのオンライン対戦とも。UC確認済み）をまとめた数字だけを貯める:
+ *   /cpuLearn/chars/{charId}      = { games, wins }  そのキャラを戦場に出した側の試合数・勝ち数（引き分けは0.5勝）
+ *   /cpuLearn/strategies/{key}    = { games, wins }  CPU戦でCPUがその戦い方を使った試合数・CPUの勝ち数
+ * 1試合ごとに数十バイト増えるだけで、キャラ数×2＋戦い方の数の項目しか無いので、量は数KBで頭打ちになる。
+ * 書き込むのは: CPU戦＝その端末 / オンライン対戦＝ホスト（player1）だけ（両者が書くと二重に数えるため）。
+ * 開発用の自動対戦（cpuArenaMode）とオフラインの開発用テストは書かない。
+ * 使い方: ①CPUが買うキャラを選ぶ時、勝率の高いキャラを少し優先する（cpuLearnedCharFactor）
+ *         ②CPU戦の開始時に、戦い方の候補（CPU_CANDIDATES）から人間によく勝っているものを選びやすくする（トンプソン抽出）
+ * ==================================================================== */
+let matchCharsUsed = { player1: new Set(), player2: new Set() };
+let cpuLearnData = { chars: {}, strategies: {} }; // 最後に読み込んだ学習データ（読み込み失敗時は空＝学習なしで動く）
+
+async function loadCpuLearnData() {
+  try {
+    const snap = await Promise.race([get(ref(db, "cpuLearn")), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 3000))]);
+    const v = snap.val() || {};
+    cpuLearnData = { chars: v.chars || {}, strategies: v.strategies || {} };
+  } catch {
+    // 読めなくてもCPU戦は遊べる（学習データなしの標準の強さで動く）
+  }
+}
+
+function recordMatchForLearning(winner) {
+  if (cpuArenaMode) return;
+  const online = !!(roomCode && myRole);
+  if (online ? myRole !== "player1" : !cpuMode) return;
+  if (!matchCharsUsed.player1.size && !matchCharsUsed.player2.size) return; // 一度も戦闘せずに終わった（開戦前の降参など）試合は数えない
+  const updates = {};
+  for (const owner of ["player1", "player2"]) {
+    const pts = winner === "draw" ? 0.5 : (winner === owner ? 1 : 0);
+    for (const charId of matchCharsUsed[owner]) {
+      updates[`chars/${charId}/games`] = increment(1);
+      if (pts) updates[`chars/${charId}/wins`] = increment(pts);
+    }
+  }
+  if (cpuMode && cpuMatchStrategy) {
+    const pts = winner === "draw" ? 0.5 : (winner === "player2" ? 1 : 0);
+    updates[`strategies/${cpuMatchStrategy}/games`] = increment(1);
+    if (pts) updates[`strategies/${cpuMatchStrategy}/wins`] = increment(pts);
+  }
+  if (Object.keys(updates).length) update(ref(db, "cpuLearn"), updates).catch(() => {});
+}
+
+// 学習したキャラの勝率から、買う時の重み（0.5〜1.5倍）を出す。試合数が少ないうちは勝率50%寄りに補正する
+function cpuLearnedCharFactor(charId) {
+  const st = cpuLearnData.chars[charId];
+  if (!st || !st.games) return 1;
+  const rate = ((st.wins || 0) + 5) / (st.games + 10);
+  return 1 + (rate - 0.5) * 2 * CPU_LEARN_CHAR_WEIGHT;
+}
+const CPU_LEARN_CHAR_WEIGHT = 0.5;
+
+// 戦い方の候補からトンプソン抽出で1つ選ぶ（勝率が高そうなものほど選ばれやすいが、ときどき他も試す）
+function cpuSampleBeta(a, b) {
+  // ガンマ分布2つの比でベータ分布を作る（a,bは1以上の整数に丸めて簡易計算）
+  const gamma = k => { let s = 0; for (let i = 0; i < Math.max(1, Math.round(k)); i++) s -= Math.log(Math.random()); return s; };
+  const x = gamma(a), y = gamma(b);
+  return x / (x + y);
+}
+let cpuMatchStrategy = null; // このCPU戦でCPUが使っている戦い方のキー
+let cpuThinking = false; // CPUが次のラウンドの作戦を考えている間はtrue（その間は開戦できない）
+function cpuChooseStrategy() {
+  let best = CPU_DEFAULT_STRATEGY, bestDraw = -1;
+  for (const key of CPU_CANDIDATES) {
+    const st = cpuLearnData.strategies[key] || {};
+    const games = st.games || 0, wins = st.wins || 0;
+    const draw = cpuSampleBeta(wins + 1, games - wins + 1);
+    if (draw > bestDraw) { bestDraw = draw; best = key; }
+  }
+  return best;
+}
+
 let cpuMode = false;
 // [CPU戦 2026-09-27] 開発用のCPUどうしの自動対戦（tools/cpu_arena.mjs）中はtrue。advanceToNextRound()末尾の
 // 通常のCPU手番フックを止め、両陣営の手番をアリーナ側から呼ぶ
 let cpuArenaMode = false;
 // 陣営ごとのCPU状態。通常のCPU戦ではplayer2だけを使い、アリーナでは両方を使う
-const cpuSides = { player1: { deck: [], pool: [], pending: [], memory: null }, player2: { deck: [], pool: [], pending: [], memory: null } };
-// [CPU戦 2026-09-27] UC要望「戦闘を学習させたい（→相手の戦い方に合わせて試合中に対策してくる）」。
-// 試合中に見た相手の動きの記憶。threat[i]=自分のi番目の拠点が狙われた度合い、oppDef[j]=相手のj番目の
-// 拠点を相手が守っていた度合い。毎ラウンド半分に減衰させてから新しい観察を足す（直近ほど重く見る）
-function cpuNewMemory() { return { threat: [0, 0], oppDef: [0, 0], rounds: 0 }; }
+const cpuSides = { player1: { deck: [], pool: [], pending: [] }, player2: { deck: [], pool: [], pending: [] } };
 function cpuClearPending() { cpuSides.player1.pending = []; cpuSides.player2.pending = []; }
 
 const CPU_ONLINE_NOTE = "配置が終わったら上部の「配置完了」を押してください。両者揃うと自動開戦します。";
@@ -5456,16 +5537,20 @@ function cpuInitSide(owner) {
   side.deck = pickRandomPool(cpuSeed(), Math.min(DECK_SIZE, all.length), all);
   side.pool = [];
   side.pending = [];
-  side.memory = cpuNewMemory();
   cpuRegeneratePool(owner, 1);
 }
-// 通常のCPU戦の新しい試合（resetGameState()の後に呼ぶ）
+// 通常のCPU戦の新しい試合（resetGameState()の後に呼ぶ）。戦い方は学習データから選ぶ
 function initCpuMatch() {
+  cpuMatchStrategy = cpuChooseStrategy();
   cpuInitSide("player2");
-  cpuTakeTurn("player2");
+  cpuTakeTurn("player2", cpuMatchStrategy);
 }
 
-function startCpuMatch() {
+async function startCpuMatch() {
+  const btn = document.getElementById("cpuMatchBtn");
+  btn.disabled = true; btn.textContent = "準備中…";
+  await loadCpuLearnData(); // [CPU学習] みんなの試合から育った学習データ（最大3秒待ち、失敗しても続行）
+  btn.disabled = false; btn.textContent = "CPU戦を始める";
   setMap(document.getElementById("mapSelect").value);
   resetGameState();
   setCpuMode(true);
@@ -5519,60 +5604,19 @@ function cpuAffordable(owner) {
   return cpuSides[owner].pool.map(getCharacter).filter(c => c && c.price <= credits[owner]);
 }
 
-// 直前の戦闘（battleResult）を見て、相手の攻め方・守り方を記憶に足す。advanceToNextRound()の冒頭
-// （unitsがまだ開戦時点の配置のまま）で呼ぶ。見るのは戦闘画面で誰でも見られる情報（拠点へのダメージ・
-// 相手キャラの開戦時の位置と向かった先）だけ
-function cpuObserveBattle(owner) {
-  const side = cpuSides[owner];
-  if (!side.memory || !battleResult) return;
-  const mem = side.memory;
-  const enemy = cpuEnemyOf(owner);
-  const myBases = bases[owner], enemyBases = bases[enemy];
-  const baseIndexAt = (list, col, row) => list.findIndex(b => b.col === col && b.row === row);
-  mem.threat = mem.threat.map(v => v * 0.5);
-  mem.oppDef = mem.oppDef.map(v => v * 0.5);
-  // ① 自分の拠点が受けたダメージ
-  const entityById = new Map([...battleResult.units, ...battleResult.bases].map(e => [e.id, e]));
-  for (const ev of battleResult.log) {
-    if (ev.type !== "damage" || !ev.targetIsBase) continue;
-    const target = entityById.get(ev.targetId), attacker = entityById.get(ev.attackerId);
-    if (!target || target.owner !== owner || !attacker || attacker.owner !== enemy) continue;
-    const bi = baseIndexAt(myBases, target.col, target.row);
-    if (bi >= 0) mem.threat[bi] += ev.amount;
-  }
-  // ② 相手キャラが向かった先・守っていた場所（開戦時点の指示と位置）
-  for (const u of units.filter(x => x.owner === enemy)) {
-    const dest = u.purpose === "goto" && u.waypoints && u.waypoints.length ? u.waypoints[u.waypoints.length - 1] : null;
-    if (dest) {
-      myBases.forEach((b, i) => { if (hexDistance(dest, b) <= 3) mem.threat[i] += 40; });
-    } else if (u.purpose === "rush") {
-      // 全軍突撃は一番近い拠点へ向かう
-      let bi = 0;
-      myBases.forEach((b, i) => { if (hexDistance(u, b) < hexDistance(u, myBases[bi])) bi = i; });
-      mem.threat[bi] += 40;
-    } else if (u.purpose === "guard") {
-      enemyBases.forEach((b, j) => { if (hexDistance(u, b) <= 3) mem.oppDef[j] += 1; });
-    }
-  }
-  mem.rounds++;
-}
-
 // 狙う相手拠点を選ぶ: 近くにいる相手キャラが少ない（手薄な）拠点、同じくらいならHPが減っている拠点。
 // 見えるのは盤面に出ている相手キャラ（前ラウンドから残っているもの）だけ
 function cpuPickTarget(owner, opts) {
   const enemy = cpuEnemyOf(owner);
   const enemyUnits = units.filter(u => u.owner === enemy && u.alive !== false);
   let best = null, bestScore = Infinity;
-  const mem = cpuSides[owner].memory;
-  bases[enemy].forEach((b, j) => {
-    if (b.hp != null && b.hp <= 0) return;
+  for (const b of bases[enemy]) {
+    if (b.hp != null && b.hp <= 0) continue;
     const near = enemyUnits.filter(u => hexDistance(u, b) <= opts.guardRadius + 1).length;
     const hp = b.hp != null ? b.hp : 300;
-    // [適応] 相手がこれまで守りを置いてきた拠点ほど避ける
-    const habit = opts.adapt && mem ? mem.oppDef[j] * opts.nearWeight : 0;
-    const score = near * opts.nearWeight + habit + hp + Math.random() * opts.targetNoise;
+    const score = near * opts.nearWeight + hp + Math.random() * opts.targetNoise;
     if (score < bestScore) { bestScore = score; best = b; }
-  });
+  }
   return best || bases[enemy][0];
 }
 // キャラの素の強さの目安（HPと攻撃力と行動力。スキルは考慮しない）
@@ -5587,15 +5631,6 @@ function cpuBalancedTurn(owner, opts) {
   const myBases = bases[owner];
   const target = cpuPickTarget(owner, opts);
   const defPerBase = Array.isArray(opts.defPerBase) ? opts.defPerBase[currentRound - 1] : opts.defPerBase(currentRound);
-  // [適応] 拠点ごとの守り役の数。相手がはっきり片方の拠点ばかり狙ってくるなら、その拠点に1体増やす
-  const defWant = myBases.map(() => defPerBase);
-  const mem = cpuSides[owner].memory;
-  if (opts.adapt && mem && mem.rounds > 0) {
-    const hi = mem.threat[0] >= mem.threat[1] ? 0 : 1, lo = 1 - hi;
-    if (mem.threat[hi] >= opts.adaptThreatMin && mem.threat[hi] >= mem.threat[lo] * opts.adaptThreatRatio) {
-      defWant[hi] += opts.adaptExtraDef;
-    }
-  }
   const free = cpuFreeCells(owner);
   const role = new Map(); // unit -> "def:<拠点の添字>" | "atk"
 
@@ -5604,7 +5639,7 @@ function cpuBalancedTurn(owner, opts) {
   const defCount = myBases.map(() => 0);
   for (const u of carried) {
     const bi = myBases.findIndex(b => hexDistance(u, b) <= opts.guardRadius);
-    if (bi >= 0 && defCount[bi] < defWant[bi] && (u.purpose === "guard" || needsFacing(getCharacter(u.charId)))) {
+    if (bi >= 0 && defCount[bi] < defPerBase && (u.purpose === "guard" || needsFacing(getCharacter(u.charId)))) {
       role.set(u, `def:${bi}`); defCount[bi]++;
     } else {
       role.set(u, "atk");
@@ -5616,11 +5651,12 @@ function cpuBalancedTurn(owner, opts) {
   while (free.length && guard++ < 40) {
     const affordable = cpuAffordable(owner);
     if (!affordable.length) break;
-    const needBase = defCount.findIndex((c, i) => c < defWant[i]);
+    const needBase = defCount.findIndex(c => c < defPerBase);
     let char, cell, r;
     if (needBase >= 0) {
       // 守り役: 守りに向いたキャラを優先し、その拠点に一番近い空きマスへ
-      const sorted = affordable.slice().sort((a, b) => cpuDefenderScore(b) - cpuDefenderScore(a));
+      const learnedDef = c => (opts.useLearned === false ? 1 : cpuLearnedCharFactor(c.id));
+      const sorted = affordable.slice().sort((a, b) => cpuDefenderScore(b) * learnedDef(b) - cpuDefenderScore(a) * learnedDef(a));
       char = cpuPick(sorted.slice(0, Math.max(1, Math.ceil(sorted.length / 2))));
       const base = myBases[needBase];
       cell = free.slice().sort((a, b) => hexDistance(a, base) - hexDistance(b, base) || Math.random() - 0.5)[0];
@@ -5634,7 +5670,9 @@ function cpuBalancedTurn(owner, opts) {
       if (!cands.length) cands = affordable;
       // 買い方: random=ランダム / strong=強いキャラ優先 / efficient=値段のわりに強いキャラ優先（いずれも上位半分から選ぶ）
       if (opts.atkPick && opts.atkPick !== "random") {
-        const score = opts.atkPick === "strong" ? cpuStrength : (c => cpuStrength(c) / c.price);
+        // [CPU学習] みんなの試合で勝率の高いキャラほど少し優先する（学習データが無ければ×1で影響なし）
+        const learned = c => (opts.useLearned === false ? 1 : cpuLearnedCharFactor(c.id));
+        const score = opts.atkPick === "strong" ? (c => cpuStrength(c) * learned(c)) : (c => cpuStrength(c) / c.price * learned(c));
         cands = cands.slice().sort((a, b) => score(b) - score(a)).slice(0, Math.max(1, Math.ceil(cands.length / 2)));
       }
       char = cpuPick(cands);
@@ -5648,7 +5686,7 @@ function cpuBalancedTurn(owner, opts) {
 
   // --- 指示 ---
   const adj = cpuCellsAroundBase(target, 1);
-  const support = cpuCellsAroundBase(target, 2);
+  const support = cpuCellsAroundBase(target, opts.supportDist || 2);
   let adjIdx = Math.floor(Math.random() * Math.max(1, adj.length));
   for (const u of cpuMyUnits(owner)) {
     const char = getCharacter(u.charId);
@@ -5662,6 +5700,7 @@ function cpuBalancedTurn(owner, opts) {
       u.purpose = "goto"; u.waypoints = [cpuPick(support)];
       continue;
     }
+    if (opts.atkGoal === "rush") { u.purpose = "rush"; u.waypoints = null; continue; } // 一番近い拠点へ突撃
     if (adj.length) { // 近接の攻め役は狙った拠点の隣へ（同じマスに集まりすぎないよう順に割り振る）
       u.purpose = "goto"; u.waypoints = [adj[adjIdx++ % adj.length]];
     } else {
@@ -5678,22 +5717,20 @@ const CPU_BALANCED_DEFAULT = {
   targetNoise: 40,     // 狙いを毎回少しばらけさせる
   atkRangedRatio: 0,   // 攻め役に占める遠距離の割合の目安（遠距離を攻めに混ぜるほど弱かった）
   atkPick: "strong",   // 攻め役の買い方: random / strong（強いキャラ優先） / efficient（値段のわりに強いキャラ優先）
-  adapt: false,        // 相手の戦い方を覚えて対策するか（v3）
-  adaptExtraDef: 1,    // よく狙われる拠点に増やす守り役の数
-  adaptThreatMin: 60,  // 「狙われている」とみなす最低ライン（拠点ダメージ＋向かってきたキャラ1体あたり40）
-  adaptThreatRatio: 1.5, // もう片方の拠点の何倍狙われていたら偏っているとみなすか
+  atkGoal: "adjacent", // 近接の攻め役の進み方: adjacent（狙った拠点の隣のマスへ） / rush（一番近い拠点へ突撃）
+  supportDist: 2,      // 遠距離の攻め役が援護する位置（狙った拠点からの距離）
 };
 
 // CPUの戦い方（難易度・アリーナでの比較用）。いずれも「購入・配置（pendingへ）・全キャラへの指示」を行う
 const CPU_STRATEGIES = {
   // v2（2026-09-27）: 攻守バランス型。一点集中＋各拠点の守り役＋手薄な拠点を狙う
   v2(owner) { cpuBalancedTurn(owner, CPU_BALANCED_DEFAULT); },
-  // v3（2026-09-27）: v2＋相手の戦い方を覚えて対策（よく狙われる拠点の守りを厚く・相手がいつも守る拠点は避ける）
-  // 設定は自動対戦で調整（各400試合）: 片側ばかり攻める相手に v2 56%→v3 67.5%、全員突撃に74.8%、v2に57.3%
-  v3(owner) { cpuBalancedTurn(owner, { ...CPU_BALANCED_DEFAULT, adapt: true, adaptExtraDef: 2, adaptThreatMin: 40, adaptThreatRatio: 1.2 }); },
-  // 比較用のくせのある相手: 毎回、相手の左側（col小）の拠点だけを全員で攻める。守りは置かない
+  // 先読み（2026-09-27）: v2の設定を元に配置案を8つ作り、相手の出方の予想と4回ずつ試算して一番よい案を選ぶ
+  look(owner) { cpuLookaheadTurn(owner, CPU_BALANCED_DEFAULT); },
+  // 先読み・守り型: 自動探索（tools/cpu_evolve.mjs）で見つかった守り役を厚くする設定を土台にした先読み
+  lookDef(owner) { cpuLookaheadTurn(owner, CPU_DEFENSIVE_OPTS); },
+  // 以下は自動対戦（tools/）での比較相手専用。毎回、相手の左側（col小）/右側の拠点だけを全員で攻める
   habitLeft(owner) { cpuHabitTurn(owner, 0); },
-  // 比較用のくせのある相手: 毎回、相手の右側の拠点だけを全員で攻める
   habitRight(owner) { cpuHabitTurn(owner, 1); },
   // v1（2026-09-27初版）: 近接6:遠距離4の目安で購入、近接は前寄り・遠距離は後ろ寄りに配置、
   // 狙う拠点に7割・反対側に3割、近接は拠点の隣へ（2割突撃）、射程持ちの半分は援護位置へ
@@ -5754,7 +5791,96 @@ const CPU_STRATEGIES = {
     for (const u of cpuMyUnits(owner)) { u.purpose = "rush"; u.waypoints = null; }
   },
 };
-// 比較用: 同じ側の拠点ばかり狙う相手（適応型CPUの効果を測るため）。強いキャラを買って全員で片側を攻める
+/* ---------- 先読みCPU（2026-09-27） ----------
+ * 攻守バランス型の設定を少しずつ変えた「配置案」をいくつか作り、それぞれ相手の出方の予想と手元で戦わせて
+ * （simulateBattle）一番結果の良い案を採用する。相手の予想は、見えている相手キャラ（前ラウンドから残っているもの）
+ * ＋相手が今ラウンドに買いそうなもの（どのキャラでも買える前提で、標準のCPUと全員突撃の考え方で作る）。
+ * 相手の今ラウンドの新しい配置・相手のデッキは見ない（公平性はオンライン対戦と同じ）。
+ * 試算中はゲームの状態（クレジット・未公開の配置・前ラウンドから残るキャラの指示・unitSeq・建設の一時壁）を
+ * 書き換えるので、必ず元に戻す（try/finally）。 */
+function cpuCaptureSide(owner) {
+  return {
+    credits: credits[owner],
+    pending: cpuSides[owner].pending.map(u => ({ ...u, waypoints: u.waypoints && u.waypoints.map(w => ({ ...w })) })),
+    orders: units.filter(u => u.owner === owner).map(u => [u, u.purpose, u.waypoints ? u.waypoints.map(w => ({ ...w })) : null, u.facing]),
+  };
+}
+function cpuApplySide(owner, snap) {
+  credits[owner] = snap.credits;
+  cpuSides[owner].pending = snap.pending.map(u => ({ ...u, waypoints: u.waypoints && u.waypoints.map(w => ({ ...w })) }));
+  for (const [u, p, w, f] of snap.orders) { u.purpose = p; u.waypoints = w ? w.map(x => ({ ...x })) : null; u.facing = f; }
+}
+// 盤面（前ラウンドから残るキャラ＋両者の未公開配置）を戦闘用にまるごと複製する
+function cpuCloneBattleUnits() {
+  return [...units, ...cpuSides.player1.pending, ...cpuSides.player2.pending]
+    .filter(u => u.alive !== false)
+    .map(u => ({ ...u, waypoints: u.waypoints && u.waypoints.map(w => ({ ...w })) }));
+}
+// 相手（enemy）の今ラウンドの出方の予想を作る。見えている情報だけを使う
+function cpuModelEnemy(enemy, style) {
+  const side = cpuSides[enemy];
+  const realPool = side.pool;
+  const spentSoFar = side.pending.reduce((sum, u) => sum + getCharacter(u.charId).price, 0);
+  side.pool = CHARACTERS.map(c => c.id); // 相手のデッキは分からないので、どのキャラでも買える前提
+  side.pending = [];
+  credits[enemy] += spentSoFar; // 相手がすでに買った分（アリーナで先に手番を終えている時）は見なかったことにする
+  try {
+    if (style === "rush") CPU_STRATEGIES.rushAll(enemy);
+    else cpuBalancedTurn(enemy, { ...CPU_BALANCED_DEFAULT, useLearned: false });
+  } finally {
+    side.pool = realPool;
+  }
+}
+// 1回の試算の点数（ownerから見て高いほど良い）
+function cpuScoreSimulation(owner, simUnits) {
+  const savedWalls = new Map(tempWalls);
+  try {
+    const result = simulateBattle(simUnits, bases, Math.floor(Math.random() * 2147483647), { traps: persistentTraps, round4: currentRound === 4 });
+    const o = interpretRoundOutcome(result, simUnits, bases, currentRound === 4);
+    if (o.endReason !== "roundEnd") return o.winner === "draw" ? 0 : (o.winner === owner ? 1000 : -1000);
+    const endUnits = o.units || result.units, endBases = o.bases || result.bases;
+    const baseHp = who => endBases.filter(b => b.owner === who).reduce((sum, b) => sum + Math.max(0, b.hp), 0);
+    const unitHp = who => endUnits.filter(u => u.owner === who && u.alive).reduce((sum, u) => sum + Math.max(0, u.hp), 0);
+    const enemy = cpuEnemyOf(owner);
+    return (baseHp(owner) - baseHp(enemy)) + 0.3 * (unitHp(owner) - unitHp(enemy));
+  } finally {
+    tempWalls = savedWalls;
+  }
+}
+function cpuLookaheadTurn(owner, baseOpts, plans = 8, samples = 4) {
+  const enemy = cpuEnemyOf(owner);
+  const start = { mine: cpuCaptureSide(owner), theirs: cpuCaptureSide(enemy), unitSeq };
+  let best = null, bestScore = -Infinity;
+  try {
+    for (let k = 0; k < plans; k++) {
+      // 1案目は基本の設定そのまま、2案目以降は狙う拠点・守り役の数・攻め方を少しずつ変える
+      const opts = k === 0 ? baseOpts : {
+        ...baseOpts,
+        targetNoise: 400,
+        defPerBase: baseOpts.defPerBase.map(v => Math.max(0, Math.min(2, v + (Math.random() < 0.3 ? (Math.random() < 0.5 ? -1 : 1) : 0)))),
+        atkGoal: Math.random() < 0.3 ? (baseOpts.atkGoal === "rush" ? "adjacent" : "rush") : baseOpts.atkGoal,
+      };
+      cpuApplySide(enemy, start.theirs); cpuApplySide(owner, start.mine); unitSeq = start.unitSeq;
+      cpuBalancedTurn(owner, opts);
+      const plan = { side: cpuCaptureSide(owner), unitSeq };
+      let total = 0;
+      for (let m = 0; m < samples; m++) {
+        cpuApplySide(enemy, start.theirs);
+        cpuModelEnemy(enemy, m % 2 === 0 ? "balanced" : "rush");
+        total += cpuScoreSimulation(owner, cpuCloneBattleUnits());
+      }
+      if (total > bestScore) { bestScore = total; best = plan; }
+    }
+  } finally {
+    cpuApplySide(enemy, start.theirs);
+    cpuApplySide(owner, start.mine);
+    unitSeq = start.unitSeq;
+  }
+  cpuApplySide(owner, best.side);
+  unitSeq = Math.max(unitSeq, best.unitSeq);
+}
+
+// 比較用: 同じ側の拠点ばかり狙う相手。強いキャラを買って全員で片側を攻める（守りは置かない）
 function cpuHabitTurn(owner, side) {
   const enemyBases = bases[cpuEnemyOf(owner)].slice().sort((a, b) => a.col - b.col);
   const target = enemyBases[side] || enemyBases[0];
@@ -5775,7 +5901,12 @@ function cpuHabitTurn(owner, side) {
     if (adj.length) { u.purpose = "goto"; u.waypoints = [adj[k++ % adj.length]]; } else { u.purpose = "rush"; u.waypoints = null; }
   }
 }
-const CPU_DEFAULT_STRATEGY = "v3"; // 通常のCPU戦で使う戦い方（2026-09-27 v1→v2: 自動対戦でv1に77%・全員突撃に72%。→v3: 相手の戦い方に合わせて対策）
+const CPU_DEFAULT_STRATEGY = "look";
+// 自動探索（tools/cpu_evolve.mjs、12世代）で見つかった守り型の設定。v2と直接対戦で56%、全体の強さはv2とほぼ互角
+const CPU_DEFENSIVE_OPTS = { ...CPU_BALANCED_DEFAULT, defPerBase: [0, 2, 2, 1], guardRadius: 3, targetNoise: 64, atkGoal: "adjacent", supportDist: 1 };
+// CPU戦で使う戦い方の候補（学習データの勝率を見てCPU戦ごとに1つ選ぶ）。どちらも先読み
+// （自動対戦 各300試合: look は v2に74%・守り型に70.7%・全員突撃に90.7%）
+const CPU_CANDIDATES = ["look", "lookDef"]; // 通常のCPU戦で使う戦い方（2026-09-27 v1→v2: 自動対戦でv1に77%・全員突撃に72%）
 function cpuTakeTurn(owner, strategy = CPU_DEFAULT_STRATEGY) {
   CPU_STRATEGIES[strategy](owner);
 }
@@ -5783,6 +5914,7 @@ function cpuTakeTurn(owner, strategy = CPU_DEFAULT_STRATEGY) {
 // 配置完了→開戦: CPUの未公開キャラを盤面に合流させ、新しいシードで戦闘を始める
 function startCpuBattle() {
   if (battleMode) return;
+  if (cpuThinking) { showStatus("CPUが作戦を考えています。少し待ってから押してください。"); return; }
   for (const owner of ["player1", "player2"]) {
     for (const u of cpuSides[owner].pending) units.push(u);
   }
