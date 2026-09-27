@@ -4821,6 +4821,8 @@ function advanceToNextRound() {
   if (!outcome || outcome._advanced) return;
   outcome._advanced = true;
   const nextRound = currentRound + 1;
+  // [CPU戦 2026-09-27] CPUが直前の戦闘から相手の攻め方・守り方を覚える（unitsが開戦時点のままのうちに）
+  if (cpuMode || cpuArenaMode) { cpuObserveBattle("player1"); cpuObserveBattle("player2"); }
 
   // [バグ修正 2026-09-05] 設計書§6-1: 全滅・拠点陥落は「そのラウンドの勝敗」ではなく試合そのものの
   // 即時終了条件（残り行動力・残りラウンドは処理しない）。1〜3Rでも次のラウンドには進めない。
@@ -5402,7 +5404,11 @@ let cpuMode = false;
 // 通常のCPU手番フックを止め、両陣営の手番をアリーナ側から呼ぶ
 let cpuArenaMode = false;
 // 陣営ごとのCPU状態。通常のCPU戦ではplayer2だけを使い、アリーナでは両方を使う
-const cpuSides = { player1: { deck: [], pool: [], pending: [] }, player2: { deck: [], pool: [], pending: [] } };
+const cpuSides = { player1: { deck: [], pool: [], pending: [], memory: null }, player2: { deck: [], pool: [], pending: [], memory: null } };
+// [CPU戦 2026-09-27] UC要望「戦闘を学習させたい（→相手の戦い方に合わせて試合中に対策してくる）」。
+// 試合中に見た相手の動きの記憶。threat[i]=自分のi番目の拠点が狙われた度合い、oppDef[j]=相手のj番目の
+// 拠点を相手が守っていた度合い。毎ラウンド半分に減衰させてから新しい観察を足す（直近ほど重く見る）
+function cpuNewMemory() { return { threat: [0, 0], oppDef: [0, 0], rounds: 0 }; }
 function cpuClearPending() { cpuSides.player1.pending = []; cpuSides.player2.pending = []; }
 
 const CPU_ONLINE_NOTE = "配置が終わったら上部の「配置完了」を押してください。両者揃うと自動開戦します。";
@@ -5450,6 +5456,7 @@ function cpuInitSide(owner) {
   side.deck = pickRandomPool(cpuSeed(), Math.min(DECK_SIZE, all.length), all);
   side.pool = [];
   side.pending = [];
+  side.memory = cpuNewMemory();
   cpuRegeneratePool(owner, 1);
 }
 // 通常のCPU戦の新しい試合（resetGameState()の後に呼ぶ）
@@ -5512,19 +5519,60 @@ function cpuAffordable(owner) {
   return cpuSides[owner].pool.map(getCharacter).filter(c => c && c.price <= credits[owner]);
 }
 
+// 直前の戦闘（battleResult）を見て、相手の攻め方・守り方を記憶に足す。advanceToNextRound()の冒頭
+// （unitsがまだ開戦時点の配置のまま）で呼ぶ。見るのは戦闘画面で誰でも見られる情報（拠点へのダメージ・
+// 相手キャラの開戦時の位置と向かった先）だけ
+function cpuObserveBattle(owner) {
+  const side = cpuSides[owner];
+  if (!side.memory || !battleResult) return;
+  const mem = side.memory;
+  const enemy = cpuEnemyOf(owner);
+  const myBases = bases[owner], enemyBases = bases[enemy];
+  const baseIndexAt = (list, col, row) => list.findIndex(b => b.col === col && b.row === row);
+  mem.threat = mem.threat.map(v => v * 0.5);
+  mem.oppDef = mem.oppDef.map(v => v * 0.5);
+  // ① 自分の拠点が受けたダメージ
+  const entityById = new Map([...battleResult.units, ...battleResult.bases].map(e => [e.id, e]));
+  for (const ev of battleResult.log) {
+    if (ev.type !== "damage" || !ev.targetIsBase) continue;
+    const target = entityById.get(ev.targetId), attacker = entityById.get(ev.attackerId);
+    if (!target || target.owner !== owner || !attacker || attacker.owner !== enemy) continue;
+    const bi = baseIndexAt(myBases, target.col, target.row);
+    if (bi >= 0) mem.threat[bi] += ev.amount;
+  }
+  // ② 相手キャラが向かった先・守っていた場所（開戦時点の指示と位置）
+  for (const u of units.filter(x => x.owner === enemy)) {
+    const dest = u.purpose === "goto" && u.waypoints && u.waypoints.length ? u.waypoints[u.waypoints.length - 1] : null;
+    if (dest) {
+      myBases.forEach((b, i) => { if (hexDistance(dest, b) <= 3) mem.threat[i] += 40; });
+    } else if (u.purpose === "rush") {
+      // 全軍突撃は一番近い拠点へ向かう
+      let bi = 0;
+      myBases.forEach((b, i) => { if (hexDistance(u, b) < hexDistance(u, myBases[bi])) bi = i; });
+      mem.threat[bi] += 40;
+    } else if (u.purpose === "guard") {
+      enemyBases.forEach((b, j) => { if (hexDistance(u, b) <= 3) mem.oppDef[j] += 1; });
+    }
+  }
+  mem.rounds++;
+}
+
 // 狙う相手拠点を選ぶ: 近くにいる相手キャラが少ない（手薄な）拠点、同じくらいならHPが減っている拠点。
 // 見えるのは盤面に出ている相手キャラ（前ラウンドから残っているもの）だけ
 function cpuPickTarget(owner, opts) {
   const enemy = cpuEnemyOf(owner);
   const enemyUnits = units.filter(u => u.owner === enemy && u.alive !== false);
   let best = null, bestScore = Infinity;
-  for (const b of bases[enemy]) {
-    if (b.hp != null && b.hp <= 0) continue;
+  const mem = cpuSides[owner].memory;
+  bases[enemy].forEach((b, j) => {
+    if (b.hp != null && b.hp <= 0) return;
     const near = enemyUnits.filter(u => hexDistance(u, b) <= opts.guardRadius + 1).length;
     const hp = b.hp != null ? b.hp : 300;
-    const score = near * opts.nearWeight + hp + Math.random() * opts.targetNoise;
+    // [適応] 相手がこれまで守りを置いてきた拠点ほど避ける
+    const habit = opts.adapt && mem ? mem.oppDef[j] * opts.nearWeight : 0;
+    const score = near * opts.nearWeight + habit + hp + Math.random() * opts.targetNoise;
     if (score < bestScore) { bestScore = score; best = b; }
-  }
+  });
   return best || bases[enemy][0];
 }
 // キャラの素の強さの目安（HPと攻撃力と行動力。スキルは考慮しない）
@@ -5539,6 +5587,15 @@ function cpuBalancedTurn(owner, opts) {
   const myBases = bases[owner];
   const target = cpuPickTarget(owner, opts);
   const defPerBase = Array.isArray(opts.defPerBase) ? opts.defPerBase[currentRound - 1] : opts.defPerBase(currentRound);
+  // [適応] 拠点ごとの守り役の数。相手がはっきり片方の拠点ばかり狙ってくるなら、その拠点に1体増やす
+  const defWant = myBases.map(() => defPerBase);
+  const mem = cpuSides[owner].memory;
+  if (opts.adapt && mem && mem.rounds > 0) {
+    const hi = mem.threat[0] >= mem.threat[1] ? 0 : 1, lo = 1 - hi;
+    if (mem.threat[hi] >= opts.adaptThreatMin && mem.threat[hi] >= mem.threat[lo] * opts.adaptThreatRatio) {
+      defWant[hi] += opts.adaptExtraDef;
+    }
+  }
   const free = cpuFreeCells(owner);
   const role = new Map(); // unit -> "def:<拠点の添字>" | "atk"
 
@@ -5547,7 +5604,7 @@ function cpuBalancedTurn(owner, opts) {
   const defCount = myBases.map(() => 0);
   for (const u of carried) {
     const bi = myBases.findIndex(b => hexDistance(u, b) <= opts.guardRadius);
-    if (bi >= 0 && defCount[bi] < defPerBase && (u.purpose === "guard" || needsFacing(getCharacter(u.charId)))) {
+    if (bi >= 0 && defCount[bi] < defWant[bi] && (u.purpose === "guard" || needsFacing(getCharacter(u.charId)))) {
       role.set(u, `def:${bi}`); defCount[bi]++;
     } else {
       role.set(u, "atk");
@@ -5559,7 +5616,7 @@ function cpuBalancedTurn(owner, opts) {
   while (free.length && guard++ < 40) {
     const affordable = cpuAffordable(owner);
     if (!affordable.length) break;
-    const needBase = defCount.findIndex(c => c < defPerBase);
+    const needBase = defCount.findIndex((c, i) => c < defWant[i]);
     let char, cell, r;
     if (needBase >= 0) {
       // 守り役: 守りに向いたキャラを優先し、その拠点に一番近い空きマスへ
@@ -5621,12 +5678,23 @@ const CPU_BALANCED_DEFAULT = {
   targetNoise: 40,     // 狙いを毎回少しばらけさせる
   atkRangedRatio: 0,   // 攻め役に占める遠距離の割合の目安（遠距離を攻めに混ぜるほど弱かった）
   atkPick: "strong",   // 攻め役の買い方: random / strong（強いキャラ優先） / efficient（値段のわりに強いキャラ優先）
+  adapt: false,        // 相手の戦い方を覚えて対策するか（v3）
+  adaptExtraDef: 1,    // よく狙われる拠点に増やす守り役の数
+  adaptThreatMin: 60,  // 「狙われている」とみなす最低ライン（拠点ダメージ＋向かってきたキャラ1体あたり40）
+  adaptThreatRatio: 1.5, // もう片方の拠点の何倍狙われていたら偏っているとみなすか
 };
 
 // CPUの戦い方（難易度・アリーナでの比較用）。いずれも「購入・配置（pendingへ）・全キャラへの指示」を行う
 const CPU_STRATEGIES = {
   // v2（2026-09-27）: 攻守バランス型。一点集中＋各拠点の守り役＋手薄な拠点を狙う
   v2(owner) { cpuBalancedTurn(owner, CPU_BALANCED_DEFAULT); },
+  // v3（2026-09-27）: v2＋相手の戦い方を覚えて対策（よく狙われる拠点の守りを厚く・相手がいつも守る拠点は避ける）
+  // 設定は自動対戦で調整（各400試合）: 片側ばかり攻める相手に v2 56%→v3 67.5%、全員突撃に74.8%、v2に57.3%
+  v3(owner) { cpuBalancedTurn(owner, { ...CPU_BALANCED_DEFAULT, adapt: true, adaptExtraDef: 2, adaptThreatMin: 40, adaptThreatRatio: 1.2 }); },
+  // 比較用のくせのある相手: 毎回、相手の左側（col小）の拠点だけを全員で攻める。守りは置かない
+  habitLeft(owner) { cpuHabitTurn(owner, 0); },
+  // 比較用のくせのある相手: 毎回、相手の右側の拠点だけを全員で攻める
+  habitRight(owner) { cpuHabitTurn(owner, 1); },
   // v1（2026-09-27初版）: 近接6:遠距離4の目安で購入、近接は前寄り・遠距離は後ろ寄りに配置、
   // 狙う拠点に7割・反対側に3割、近接は拠点の隣へ（2割突撃）、射程持ちの半分は援護位置へ
   v1(owner) {
@@ -5686,7 +5754,28 @@ const CPU_STRATEGIES = {
     for (const u of cpuMyUnits(owner)) { u.purpose = "rush"; u.waypoints = null; }
   },
 };
-const CPU_DEFAULT_STRATEGY = "v2"; // 通常のCPU戦で使う戦い方（2026-09-27 v1→v2: 自動対戦でv1に77%・全員突撃に72%）
+// 比較用: 同じ側の拠点ばかり狙う相手（適応型CPUの効果を測るため）。強いキャラを買って全員で片側を攻める
+function cpuHabitTurn(owner, side) {
+  const enemyBases = bases[cpuEnemyOf(owner)].slice().sort((a, b) => a.col - b.col);
+  const target = enemyBases[side] || enemyBases[0];
+  const free = cpuFreeCells(owner);
+  let guard = 0;
+  while (free.length && guard++ < 40) {
+    const affordable = cpuAffordable(owner);
+    if (!affordable.length) break;
+    const sorted = affordable.slice().sort((a, b) => cpuStrength(b) - cpuStrength(a));
+    const char = cpuPick(sorted.slice(0, Math.max(1, Math.ceil(sorted.length / 2))));
+    const cell = free.slice().sort((a, b) => hexDistance(a, target) - hexDistance(b, target))[0];
+    free.splice(free.indexOf(cell), 1);
+    cpuBuyAndPlace(owner, char, cell);
+  }
+  const adj = cpuCellsAroundBase(target, 1);
+  let k = 0;
+  for (const u of cpuMyUnits(owner)) {
+    if (adj.length) { u.purpose = "goto"; u.waypoints = [adj[k++ % adj.length]]; } else { u.purpose = "rush"; u.waypoints = null; }
+  }
+}
+const CPU_DEFAULT_STRATEGY = "v3"; // 通常のCPU戦で使う戦い方（2026-09-27 v1→v2: 自動対戦でv1に77%・全員突撃に72%。→v3: 相手の戦い方に合わせて対策）
 function cpuTakeTurn(owner, strategy = CPU_DEFAULT_STRATEGY) {
   CPU_STRATEGIES[strategy](owner);
 }
