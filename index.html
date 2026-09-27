@@ -638,6 +638,20 @@
   .rules-fig-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
   .rules-fig-row .rules-fig { flex: 1 1 200px; min-width: 0; }
   .rules-fig-row .rules-fig img { max-height: 320px; width: auto; }
+  /* [UI 2026-09-27] CPUの学習状況 */
+  .learn-summary { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 4px; }
+  .learn-summary div { background: var(--bg); border: 1px solid var(--panel-border); border-radius: 10px; padding: 8px 14px; }
+  .learn-summary b { display: block; font-size: 1.4em; color: var(--accent); }
+  .learn-table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 0.95em; }
+  .learn-table th, .learn-table td { border-bottom: 1px solid var(--panel-border); padding: 5px 6px; text-align: left; white-space: nowrap; }
+  .learn-table th { color: var(--text-faint); font-weight: 600; font-size: 0.9em; }
+  .learn-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .learn-table .h-icon { width: 26px; height: 26px; border-radius: 6px; display: inline-flex; vertical-align: middle; margin-right: 6px; }
+  .learn-bar { position: relative; width: 90px; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle; }
+  .learn-bar span { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+  .learn-bar::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--text-faint); }
+  .learn-up { color: var(--ok); } .learn-down { color: #ef8b6c; } .learn-flat { color: var(--text-faint); }
+  .learn-table-wrap { overflow-x: auto; }
   .rules-body { padding: 6px 22px 22px; overflow-y: auto; font-size: 0.86em; line-height: 1.75; color: var(--text-dim); }
   .rules-body h3 {
     color: var(--text); font-size: 1em; margin: 22px 0 6px; padding-top: 14px; border-top: 1px solid var(--panel-border);
@@ -806,6 +820,7 @@
         <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
           <button id="rulesBtn" class="lobby-rules-btn">📖 遊び方・ルール説明</button>
           <button id="backToDeckBtn" class="lobby-rules-btn">🃏 デッキ編成</button>
+          <button id="learnStatsBtn" class="lobby-rules-btn">📊 CPUの学習状況</button>
         </div>
       </div>
       <div class="lobby-card">
@@ -1009,6 +1024,17 @@
         <tr><th>支給クレジット</th><td>200</td><td>+300</td><td>+400</td><td>+500</td></tr>
       </table>
     </div>
+  </div>
+</div>
+
+<!-- [UI 2026-09-27] UC要望「CPUの学習状況を見たい」。Firebase /cpuLearn の中身を表で見せる -->
+<div class="scrim" id="learnStatsScrim">
+  <div class="shop-modal rules-modal">
+    <div class="shop-modal-head">
+      <h2>CPUの学習状況</h2>
+      <button class="shop-modal-close" id="closeLearnStatsBtn">✕</button>
+    </div>
+    <div class="rules-body" id="learnStatsBody"></div>
   </div>
 </div>
 
@@ -5548,6 +5574,7 @@ function recordMatchForLearning(winner) {
       if (pts) updates[`chars/${charId}/wins`] = increment(pts);
     }
   }
+  updates[online ? "matches/online" : "matches/cpu"] = increment(1); // [UI 2026-09-27] 学習状況画面の「記録された試合数」用
   if (cpuMode && cpuMatchStrategy) {
     const pts = winner === "draw" ? 0.5 : (winner === "player2" ? 1 : 0);
     updates[`strategies/${cpuMatchStrategy}/games`] = increment(1);
@@ -5584,6 +5611,73 @@ function cpuChooseStrategy() {
   }
   return best;
 }
+
+// [UI 2026-09-27] CPUの学習状況の画面。/cpuLearn を読み込み直して表にする
+const CPU_STRATEGY_LABELS = { look: "先読み（標準）", lookDef: "先読み（守り型）" };
+async function openLearnStats() {
+  const body = document.getElementById("learnStatsBody");
+  body.innerHTML = `<p>読み込んでいます…</p>`;
+  document.getElementById("learnStatsScrim").classList.add("open");
+  let data;
+  try {
+    const snap = await Promise.race([get(ref(db, "cpuLearn")), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000))]);
+    data = snap.val() || {};
+  } catch (err) {
+    body.innerHTML = `<p>学習データを読み込めませんでした（${escapeAttr(err.message)}）。通信状態を確認してもう一度開いてください。</p>`;
+    return;
+  }
+  cpuLearnData = { chars: data.chars || {}, strategies: data.strategies || {} }; // ついでにCPU戦用のデータも最新にする
+  const matches = data.matches || {};
+  const pct = (w, g) => (g ? `${Math.round((100 * w) / g)}%` : "—");
+
+  // 戦い方
+  const stratRows = CPU_CANDIDATES.map(key => {
+    const st = cpuLearnData.strategies[key] || {};
+    const g = st.games || 0, w = st.wins || 0;
+    return `<tr><td>${CPU_STRATEGY_LABELS[key] || key}</td><td class="num">${g}</td><td class="num">${pct(w, g)}</td></tr>`;
+  }).join("");
+  // 選ばれやすさ（トンプソン抽出を何度もやってみた時の割合）
+  const tally = Object.fromEntries(CPU_CANDIDATES.map(k => [k, 0]));
+  for (let i = 0; i < 2000; i++) tally[cpuChooseStrategy()]++;
+  const pickRate = CPU_CANDIDATES.map(k => `${CPU_STRATEGY_LABELS[k] || k} ${Math.round(tally[k] / 20)}%`).join("、");
+
+  // キャラ
+  const charRows = CHARACTERS.map(c => {
+    const st = cpuLearnData.chars[c.id] || {};
+    return { c, g: st.games || 0, w: st.wins || 0, f: cpuLearnedCharFactor(c.id) };
+  }).sort((a, b) => b.g - a.g || (b.g ? b.w / b.g - a.w / a.g : 0) || a.c.name.localeCompare(b.c.name, "ja"))
+    .map(({ c, g, w, f }) => {
+      const rate = g ? w / g : null;
+      const cls = f > 1.02 ? "learn-up" : f < 0.98 ? "learn-down" : "learn-flat";
+      return `<tr>` +
+        `<td><span class="h-icon" title="${escapeAttr(c.name)}">${charFallbackTag(c.id)}<img class="h-icon-img" src="${charFaceSrc(c.id)}" alt="" onerror="${IMG_FALLBACK_ONERROR}"></span>${c.name}</td>` +
+        `<td class="num">${g}</td>` +
+        `<td class="num">${pct(w, g)}</td>` +
+        `<td>${rate == null ? "" : `<span class="learn-bar"><span style="width:${Math.round(rate * 100)}%"></span></span>`}</td>` +
+        `<td class="num ${cls}">×${f.toFixed(2)}</td></tr>`;
+    }).join("");
+
+  const totalCpu = matches.cpu || 0, totalOnline = matches.online || 0;
+  body.innerHTML =
+    `<p>みんなの試合（CPU戦・オンライン対戦）の結果から育つデータです。どのPCで遊んでも同じデータを使います。</p>` +
+    `<div class="learn-summary">` +
+      `<div>記録された試合<b>${totalCpu + totalOnline}</b></div>` +
+      `<div>うちCPU戦<b>${totalCpu}</b></div>` +
+      `<div>うちオンライン対戦<b>${totalOnline}</b></div>` +
+    `</div>` +
+    `<p class="learn-note">※試合数は2026-09-27以降に記録された分です（それ以前の試合はキャラ・戦い方の数字にだけ入っています）。</p>` +
+    `<h3>CPUの戦い方（人間との対戦成績）</h3>` +
+    `<div class="learn-table-wrap"><table class="learn-table"><tr><th>戦い方</th><th>試合数</th><th>CPUの勝率</th></tr>${stratRows}</table></div>` +
+    `<p>今の選ばれやすさ: ${pickRate}。人間によく勝っている方が選ばれやすくなり、ときどきもう一方も試します。</p>` +
+    `<h3>キャラの成績（戦場に出た側の勝率）</h3>` +
+    `<p>「CPUの買いやすさ」は、CPUがキャラを選ぶ時の重みです（×1.00が普通。勝率が高いほど大きく、最大×1.5〜最小×0.5）。試合数が少ないうちは50%寄りに補正するので、あまり変わりません。</p>` +
+    `<div class="learn-table-wrap"><table class="learn-table"><tr><th>キャラ</th><th>試合数</th><th>勝率</th><th></th><th>CPUの買いやすさ</th></tr>${charRows}</table></div>`;
+}
+document.getElementById("learnStatsBtn").addEventListener("click", openLearnStats);
+document.getElementById("closeLearnStatsBtn").addEventListener("click", () => document.getElementById("learnStatsScrim").classList.remove("open"));
+document.getElementById("learnStatsScrim").addEventListener("click", (e) => {
+  if (e.target.id === "learnStatsScrim") e.currentTarget.classList.remove("open");
+});
 
 let cpuMode = false;
 // [CPU戦 2026-09-27] 開発用のCPUどうしの自動対戦（tools/cpu_arena.mjs）中はtrue。advanceToNextRound()末尾の

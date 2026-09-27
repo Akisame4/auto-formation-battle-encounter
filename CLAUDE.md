@@ -603,3 +603,5 @@ UCから「見た目も操作性もUIを整えたい、まずロビーから」�
 
 - **[2026-09-27] ルール説明を再構成＋画面の画像**: UC要望「概要＞勝利条件＞戦闘の方法（行動力・攻撃の方法・範囲・ステータス画面の画像）＞配置フェイズ（指示の出し方を画像で）」。`#rulesScrim`の`.rules-body`を全面書き換え（目次リンク付き、`.rules-fig`で画像＋キャプション、モーダル幅640→760px）。画像は`images/rules/`（range/status_card/status_panel/order_line/order_ap/facing .png、battle.jpg）で、実際のゲーム画面をヘッドレスChrome（deviceScaleFactor 2）で撮影して切り抜いたもの。`loading="lazy"`でルール説明を開いた時だけ読み込む。キャラや画面の見た目が変わったら撮り直しが必要（撮影手順: テスト用コピーに配置用の関数を差し込み、`getScreenCTM()`でマス範囲→ページ座標に変換して`Page.captureScreenshot`のclipで切り抜く）。あわせて、13か所で使われていたのに未定義だった`--text-faint`を`:root`に定義（薄い文字のつもりが周りと同じ色になっていた）
   - 既知の問題（未対応）: 幅390pxのスマホでページのレイアウト幅が421pxに広がる（どこかの要素が画面幅を超えている、以前から）。ルール説明の枠はその421pxの中で中央に出るため、右端が少し画面外に出る
+
+- **[2026-09-27] CPUの学習状況の画面**: UC要望。ロビーに「📊 CPUの学習状況」（`#learnStatsBtn`→`#learnStatsScrim`、`openLearnStats()`）。/cpuLearn を読み直して、記録された試合数（新設の`matches/cpu`・`matches/online`、`recordMatchForLearning()`でincrement。2026-09-27以降の分のみ）、戦い方ごとの試合数・CPUの勝率・今の選ばれやすさ（`cpuChooseStrategy()`を2000回試した割合）、キャラごとの試合数・勝率バー・CPUの買いやすさ（`cpuLearnedCharFactor()`）を表示。表示のついでに`cpuLearnData`も最新化。架空データのテスト用コピーと本物のデータ（読み込みのみ）の両方で表示を確認。公開時点の本物のデータ: CPU戦3試合でCPUは0勝（look 2戦・lookDef 1戦）
