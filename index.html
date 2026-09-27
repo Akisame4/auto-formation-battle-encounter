@@ -662,6 +662,7 @@
     width: 100%; background: #14171f; border: 1px solid var(--panel-border); border-radius: 8px;
     color: var(--text); font-family: inherit; font-size: 0.86em; padding: 9px 10px; margin-bottom: 8px; cursor: pointer;
   }
+  .lobby-cpu-note { font-size: 0.74em; color: var(--text-faint); }
   .lobby-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: #5c6479; font-size: 0.74em; letter-spacing: 0.08em; }
   .lobby-divider::before, .lobby-divider::after { content: ""; flex: 1; height: 1px; background: var(--panel-border); }
   .lobby-dev-skip { margin-top: 22px; background: none; border: none; color: #5c6479; font-size: 0.76em; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
@@ -808,6 +809,12 @@
             <input type="text" id="joinCodeInput" maxlength="4" inputmode="numeric" placeholder="0000">
             <button id="joinRoomBtn" class="lobby-btn lobby-btn-ghost">参加</button>
           </div>
+        </div>
+        <div class="lobby-divider">ひとりで遊ぶ</div>
+        <div class="lobby-path">
+          <div class="lobby-path-title"><span class="lobby-path-icon">🤖</span>CPUと対戦</div>
+          <div class="lobby-cpu-note">マップは上の「ホストになる」で選んだものを使います</div>
+          <button id="cpuMatchBtn" class="lobby-btn lobby-btn-ghost">CPU戦を始める</button>
         </div>
       </div>
       <button id="devSkipLobbyBtn" class="lobby-dev-skip">開発用: ロビーをスキップしてローカルでテスト</button>
@@ -4362,6 +4369,7 @@ function showMatchResultPopup(winner, reasonLabel) {
 function resetGameState() {
   clearSeenChars(); // [UI 2026-09-26] 新しい試合では相手のデッキ表示もリセット
   surrenderHandled = false; // [UI 2026-09-27] 降参による試合終了の表示済みフラグ
+  cpuPendingUnits = []; // [CPU戦 2026-09-27] CPUがこのラウンドに置いた（まだ開戦前で見せていない）キャラ
   shownBattleResult = null; // [2026-09-27] 前の試合の決着表示を持ち越さない（再戦準備画面を閉じた時の判定にも使う）
   resetBasesToFixedPositions();
   units.length = 0;
@@ -4882,6 +4890,8 @@ function advanceToNextRound() {
       [`placements/${myRole}/ready`]: false,
     }).catch(() => {});
   }
+  // [CPU戦 2026-09-27] 新しいラウンドの配置フェイズ開始時に、CPUが自分のプールを更新して購入・配置・指示を済ませる
+  if (cpuMode) { cpuRegeneratePool(currentRound); cpuTakeTurn(); }
 
   render();
 }
@@ -5180,6 +5190,7 @@ async function createRoom() {
   // [バグ修正 2026-09-27] UC報告「一度ホームに戻って同じ人と対戦し直すと、前の対戦の最後の戦闘フェイズに
   // 戻る（片方だけ・ルームに入ってすぐ）」。新しい試合の入口では、手元に残っている前の試合の状態を必ず消す
   resetGameState();
+  if (cpuMode) setCpuMode(false); // [CPU戦 2026-09-27]
 
   // [UI 2026-09-19] マップ追加。ホストが選んだマップをルームに書き込み、双方に適用する
   const mapId = document.getElementById("mapSelect").value;
@@ -5211,6 +5222,7 @@ async function joinRoom(code) {
   // ルームを新しい試合としてやり直す（matchCountを進めるので、ルームに残っている相手側も自分でリセットする）
   const staleMatch = !isRejoin && data.status !== "waiting";
   resetGameState();
+  if (cpuMode) setCpuMode(false); // [CPU戦 2026-09-27]
   await update(ref(db, `rooms/${code}`), {
     guestOnline: true,
     status: data.status === "waiting" || staleMatch ? "placing" : data.status,
@@ -5228,6 +5240,7 @@ document.getElementById("joinRoomBtn").addEventListener("click", () => {
   joinRoom(document.getElementById("joinCodeInput").value.trim());
 });
 document.getElementById("devSkipLobbyBtn").addEventListener("click", () => {
+  if (cpuMode) setCpuMode(false); // [CPU戦 2026-09-27]
   // [デッキ機能] createRoom()/joinRoom()を経由しないため、ここで自分のアクティブデッキから
   // 改めて抽選し直す（デッキ画面で選び直した後にここへ来ても反映されるように）
   regenerateRound1Pool(Date.now());
@@ -5237,6 +5250,7 @@ document.getElementById("devSkipLobbyBtn").addEventListener("click", () => {
   render();
 });
 document.getElementById("readyBtn").addEventListener("click", () => {
+  if (cpuMode) { startCpuBattle(); return; } // [CPU戦 2026-09-27] CPUは常に準備済みなので即開戦
   if (!roomCode) return;
   if (latestRoomData && latestRoomData.surrender) return; // [UI 2026-09-27] 降参で終了済み
   clearTimeout(placementPushTimer);
@@ -5275,6 +5289,7 @@ document.getElementById("rematchBtn").addEventListener("click", () => {
     // オフライン（開発用ローカルテスト）は即時リセットのまま
     document.getElementById("matchResultScrim").classList.remove("open");
     resetGameState();
+    if (cpuMode) initCpuMatch(); // [CPU戦 2026-09-27] 新しいランダムデッキでCPUも最初から
     showStatus("再戦を開始します。配置フェイズです。");
     render();
     return;
@@ -5315,6 +5330,7 @@ document.getElementById("acceptRematchBtn").addEventListener("click", () => {
 });
 document.getElementById("goHomeBtn").addEventListener("click", () => {
   document.getElementById("matchResultScrim").classList.remove("open");
+  if (cpuMode) setCpuMode(false); // [CPU戦 2026-09-27]
   if (roomCode && myRole) {
     const onlineField = myRole === "player1" ? "hostOnline" : "guestOnline";
     update(ref(db, `rooms/${roomCode}`), { [onlineField]: false, rematchRequestBy: null, rematchKind: null, rematchSetup: null }).catch(() => {});
@@ -5356,6 +5372,170 @@ function updateMatchResultButtons() {
     acceptBtn.style.display = "none"; cancelBtn.style.display = "none"; statusEl.style.display = "none";
   }
 }
+
+/* ==================== CPU戦（2026-09-27、UC要望「一人で遊べるCPU戦」） ====================
+ * UC決定: CPUのデッキは毎試合ランダム12体／難易度は1種類（ルールベース）／マップはロビーの選択を使う。
+ * 既存のオフライン（開発用ローカルテスト）の仕組みの上に乗せる: プレイヤーは常にplayer1、CPUはplayer2。
+ * 戦闘・ラウンド進行・勝敗・降参・再戦は既存処理をそのまま使い、CPUは各ラウンドの配置フェイズ開始時に
+ * 購入・配置・指示を一瞬で済ませる（cpuTakeTurn）。公平性のため、CPUが今ラウンド新たに置いたキャラは
+ * オンライン対戦と同じく開戦まで盤面に出さない（cpuPendingUnitsに保持し、開戦直前にunitsへ合流）。
+ * CPUの判断はラウンド開始時点の盤面（前ラウンドから残っているキャラ）だけを見て行い、プレイヤーが
+ * このラウンドに新しく置いたキャラは見ない（オンラインで相手の新規配置が見えないのと同じ条件）
+ * ==================================================================== */
+let cpuMode = false;
+let cpuDeckIds = [];
+let cpuPool = [];
+let cpuPendingUnits = [];
+
+const CPU_ONLINE_NOTE = "配置が終わったら上部の「配置完了」を押してください。両者揃うと自動開戦します。";
+function setCpuMode(active) {
+  cpuMode = active;
+  cpuPendingUnits = [];
+  setOnlineModeUI(active); // 開発用パネルを隠し、配置完了ボタンを出す（オンラインと同じ見た目）
+  if (active) {
+    currentPlayer = "player1";
+    const p1Radio = document.querySelector('#playerSelect input[value="player1"]');
+    if (p1Radio) p1Radio.checked = true;
+    document.getElementById("pageSubtitle").textContent = "CPU戦（ひとりで遊ぶ）";
+    document.getElementById("cancelReadyBtn").style.display = "none";
+    document.getElementById("readyStatusLabel").textContent = "";
+    document.getElementById("readyBtn").disabled = false;
+  }
+  document.querySelector("#onlineBattleNote .status-line").textContent = active
+    ? "配置が終わったら上部の「配置完了」を押すと開戦します（CPUは準備済みです）。"
+    : CPU_ONLINE_NOTE;
+}
+
+function cpuIsRanged(char) { return char.skills.some(sk => sk.startsWith("射程ボーナス") || sk.startsWith("射撃")); }
+function cpuPick(list) { return list[Math.floor(Math.random() * list.length)]; }
+
+// CPUのラウンドごとのプール。プレイヤー側のregenerateRoundPool()と同じ規則（R1は抽選、R2以降は追加）
+function cpuRegeneratePool(round) {
+  const targetSize = Math.min(ROUND_POOL_SIZE[round], cpuDeckIds.length);
+  if (round === 1 || cpuPool.length === 0) {
+    cpuPool = pickRandomPool(Date.now(), targetSize, cpuDeckIds);
+    return;
+  }
+  const remaining = cpuDeckIds.filter(id => !cpuPool.includes(id));
+  const addCount = Math.max(0, Math.min(targetSize - cpuPool.length, remaining.length));
+  cpuPool = [...cpuPool, ...pickRandomPool(Date.now() + 1, addCount, remaining)];
+}
+
+// 新しい試合のCPU準備: ランダムデッキ→R1プール→R1の配置（resetGameState()の後に呼ぶ）
+function initCpuMatch() {
+  const all = CHARACTERS.map(c => c.id);
+  cpuDeckIds = pickRandomPool(Date.now() + 7, Math.min(DECK_SIZE, all.length), all);
+  cpuPool = [];
+  cpuRegeneratePool(1);
+  cpuTakeTurn();
+}
+
+function startCpuMatch() {
+  setMap(document.getElementById("mapSelect").value);
+  resetGameState();
+  setCpuMode(true);
+  initCpuMatch();
+  lobbyPhase = "hidden";
+  hideLobbyScreen();
+  showStatus("CPU戦: キャラを購入・配置して「配置完了」を押してください。");
+  render();
+}
+
+// 目標にするマス: 指定の拠点からの距離がdist（見つからなければ近い距離）の、壁でないマス
+function cpuCellsAroundBase(base, dist) {
+  const cells = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (walls.has(key(col, row))) continue;
+      if (hexDistance(base, { col, row }) === dist) cells.push({ col, row });
+    }
+  }
+  return cells;
+}
+
+// CPUの1ラウンド分の行動: 購入→配置→（残っているキャラも含めて）指示
+function cpuTakeTurn() {
+  const me = "player2";
+  // 置けるマス（自陣・空き）。前側（相手に近い＝rowが小さい）から順に並べる
+  const occupied = new Set([...units, ...cpuPendingUnits].map(u => key(u.col, u.row)));
+  for (const b of [...bases.player1, ...bases.player2]) occupied.add(key(b.col, b.row));
+  const free = [...computeTerritory(me)].filter(k => !occupied.has(k))
+    .map(k => { const [col, row] = k.split(",").map(Number); return { col, row }; })
+    .sort((a, b) => a.row - b.row || Math.random() - 0.5);
+
+  // --- 購入と配置 ---
+  const myUnits = () => [...units.filter(u => u.owner === me && u.alive !== false), ...cpuPendingUnits];
+  let guard = 0;
+  while (free.length && guard++ < 40) {
+    const affordable = cpuPool.map(getCharacter).filter(c => c && c.price <= credits[me]);
+    if (!affordable.length) break;
+    const owned = myUnits().map(u => getCharacter(u.charId));
+    const rangedCount = owned.filter(cpuIsRanged).length;
+    const meleeCount = owned.length - rangedCount;
+    // 近接6：遠距離4くらいの割合を目安に、足りない側を優先して買う（該当が無ければ何でも）
+    const wantRanged = rangedCount < Math.ceil((meleeCount + 1) * 0.66);
+    let cands = affordable.filter(c => cpuIsRanged(c) === wantRanged);
+    if (!cands.length) cands = affordable;
+    const char = cpuPick(cands);
+    credits[me] -= char.price;
+    // 近接は前寄り、遠距離は後ろ寄りのマスに置く（それぞれ候補の中からランダム）
+    const half = Math.max(1, Math.ceil(free.length / 2));
+    const zone = cpuIsRanged(char) ? free.slice(free.length - half) : free.slice(0, half);
+    const cell = cpuPick(zone);
+    free.splice(free.indexOf(cell), 1);
+    let disguiseAs = null;
+    if (char.skills.includes("変化")) {
+      const others = myUnits();
+      if (others.length) disguiseAs = cpuPick(others).charId;
+    }
+    cpuPendingUnits.push({
+      id: `${me}_${++unitSeq}`, owner: me, charId: char.id, col: cell.col, row: cell.row,
+      purpose: "guard", waypoints: null, facing: needsFacing(char) ? cpuPick([1, 2]) : null,
+      disguiseAs, revealed: false,
+    });
+  }
+
+  // --- 指示 ---
+  // 攻める拠点を1つ決めて主力を集中させる（3割のキャラは反対側の拠点へ回す）。前ラウンドから
+  // 残っているキャラにも毎ラウンド出し直す（移動はできないが指示は変えられる）
+  const enemyBases = bases.player1;
+  const mainTarget = cpuPick(enemyBases);
+  const otherTarget = enemyBases.find(b => b !== mainTarget) || mainTarget;
+  for (const u of myUnits()) {
+    const char = getCharacter(u.charId);
+    const target = Math.random() < 0.7 ? mainTarget : otherTarget;
+    if (needsFacing(char)) { // 射撃系（向き指定あり）はその場から前方を撃つ
+      u.purpose = "guard"; u.waypoints = null;
+      if (u.facing == null) u.facing = cpuPick([1, 2]);
+      continue;
+    }
+    if (cpuIsRanged(char)) { // 射程のあるキャラは半分くらい前線の少し後ろまで出て援護、残りは守る
+      if (Math.random() < 0.55) {
+        const spots = cpuCellsAroundBase(target, 3);
+        if (spots.length) { u.purpose = "goto"; u.waypoints = [cpuPick(spots)]; continue; }
+      }
+      u.purpose = "guard"; u.waypoints = null;
+      continue;
+    }
+    // 近接: 狙った拠点の隣へ向かう（2割は全軍突撃と同じく一番近い拠点へ）
+    if (Math.random() < 0.2) { u.purpose = "rush"; u.waypoints = null; continue; }
+    const adj = cpuCellsAroundBase(target, 1);
+    if (adj.length) { u.purpose = "goto"; u.waypoints = [cpuPick(adj)]; }
+    else { u.purpose = "rush"; u.waypoints = null; }
+  }
+}
+
+// 配置完了→開戦: CPUの未公開キャラを盤面に合流させ、新しいシードで戦闘を始める
+function startCpuBattle() {
+  if (battleMode) return;
+  for (const u of cpuPendingUnits) units.push(u);
+  cpuPendingUnits = [];
+  document.getElementById("seedInput").value = Date.now() % 2147483647;
+  mode = "idle"; selectedQueueEntry = null; selectedUnitId = null;
+  render();
+  enterBattleMode();
+}
+document.getElementById("cpuMatchBtn").addEventListener("click", startCpuMatch);
 
 // [UI 2026-09-27] 降参。オンラインはルームに`surrender: 降参した側のrole`を書き込み、両者が
 // handleRoomUpdate()でそれを見て試合終了ポップアップ（勝敗・再戦・ホームに戻る）を出す。
