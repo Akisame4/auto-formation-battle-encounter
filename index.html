@@ -4945,6 +4945,7 @@ function myPlacementSnapshot() {
     queue: queue[myRole],
     credits: credits[myRole],
     pool: currentPool, // [デッキ機能] このラウンドの自分専用抽選プール。リロード時に再抽選させず復元するため
+    round: currentRound, // [バグ修正 2026-09-27] ホストが両者の配置のラウンド一致を確認してから開戦するため
   };
 }
 
@@ -5092,8 +5093,18 @@ function handleRoomUpdate(snap) {
   }
 
   // ホスト側だけが両者ready検出時にseedを発行し開戦させる（書き込み競合を避けるための単独責任）
-  if (myRole === "player1" && myReady && opponentReady && data.status !== "battle") {
-    update(roomRef, { status: "battle", seed: Date.now() % 2147483647 });
+  // [バグ修正 2026-09-27] UC報告「相手が前の戦闘フェイズを見ている間に自分が準備完了を押すと、相手も
+  // 準備完了扱いになっていてラウンドがズレる」。readyは各自が「次のラウンドへ進む」で自分の分だけ
+  // falseに戻す設計のため、相手が戦闘の再生を見ている間は相手の前ラウンドのready:trueが残っており、
+  // 先に進んだ側が準備完了を押した瞬間に「両者ready」が成立して、相手の前ラウンドの配置のまま開戦していた。
+  // ①開戦の書き込みで両者のreadyをまとめてfalseに戻す、②両者の配置のラウンド番号が一致する時だけ開戦する
+  const p1Round = placements.player1 && placements.player1.round;
+  const p2Round = placements.player2 && placements.player2.round;
+  if (myRole === "player1" && myReady && opponentReady && data.status !== "battle" && p1Round === p2Round) {
+    update(roomRef, {
+      status: "battle", seed: Date.now() % 2147483647,
+      "placements/player1/ready": false, "placements/player2/ready": false,
+    });
   }
 
   if (latestRoomData !== data) return; // [バグ修正 2026-09-27] 同上（上のupdate()による入れ子の呼び出し対策）
