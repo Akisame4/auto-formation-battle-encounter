@@ -216,6 +216,21 @@
     box-shadow: 0 2px 8px rgba(255,138,92,0.25); white-space: nowrap;
   }
   .rush-cta-topbar:hover { filter: brightness(1.05); }
+  /* [UI 2026-09-27] 降参ボタンと確認ダイアログ */
+  .surrender-btn {
+    font-family: inherit; font-size: 0.8em; color: var(--text-dim); background: transparent;
+    border: 1px solid #4a5166; border-radius: 999px; padding: 5px 12px; cursor: pointer; white-space: nowrap;
+  }
+  .surrender-btn:hover { color: #ff9b9b; border-color: #b85a5a; }
+  .surrender-modal { width: min(360px, 100%); padding: 22px 20px 18px; text-align: center; }
+  .surrender-title { font-size: 1.1em; font-weight: 700; margin-bottom: 8px; }
+  .surrender-sub { font-size: 0.84em; color: var(--text-dim); margin-bottom: 18px; }
+  .surrender-actions { display: flex; gap: 10px; justify-content: center; }
+  .surrender-confirm-btn {
+    font-family: inherit; font-weight: 700; color: #fff; background: #b8433a; border: none;
+    border-radius: 8px; padding: 9px 18px; cursor: pointer;
+  }
+  .surrender-confirm-btn:hover { filter: brightness(1.08); }
   #readyRow { align-items: center; gap: 10px; } /* [UI 2026-09-05] 配置完了は残クレジットとHPバーの間に配置 */
 
   .scrim {
@@ -945,6 +960,7 @@
         <button id="cancelReadyBtn" class="ready-cancel-btn" style="display:none;">キャンセル</button>
         <span id="readyStatusLabel" class="status-line"></span>
       </span>
+      <button id="surrenderBtn" type="button" class="surrender-btn" title="この試合を降参して終了します">🏳 降参</button>
       <button id="rushAllBtn" type="button" class="rush-cta-topbar" title="配置済みの自分の全キャラの指示を「相手拠点へ突撃」に一括変更します">🚩 全軍突撃</button>
       <div class="credits-pill">残クレジット <span class="amt" id="creditsLabel"></span></div>
       <button id="openShopBtn" class="shop-cta-topbar">＋ キャラを購入</button>
@@ -1053,6 +1069,18 @@
         <button id="acceptRematchBtn" class="btn-primary-lg" style="display:none;">再戦を受け入れる</button>
         <button id="cancelRematchBtn" class="close-btn" style="display:none;">申し込みを取り消す</button>
         <button id="goHomeBtn" class="close-btn">ホームに戻る</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- [UI 2026-09-27] UC要望「配置画面に降参ボタン。押したら本当に降参しますかと確認してから、ゲーム終了画面を」 -->
+  <div class="scrim" id="surrenderScrim">
+    <div class="shop-modal surrender-modal">
+      <div class="surrender-title">本当に降参しますか？</div>
+      <div class="surrender-sub">降参するとこの試合はあなたの敗北で終了します。</div>
+      <div class="surrender-actions">
+        <button id="surrenderCancelBtn" class="close-btn">やめる</button>
+        <button id="surrenderConfirmBtn" class="surrender-confirm-btn">降参する</button>
       </div>
     </div>
   </div>
@@ -4333,6 +4361,7 @@ function showMatchResultPopup(winner, reasonLabel) {
 // [UI 2026-09-05] resetBtn（開発用「全てリセット」）と再戦ボタンで共用するゲーム状態の初期化
 function resetGameState() {
   clearSeenChars(); // [UI 2026-09-26] 新しい試合では相手のデッキ表示もリセット
+  surrenderHandled = false; // [UI 2026-09-27] 降参による試合終了の表示済みフラグ
   shownBattleResult = null; // [2026-09-27] 前の試合の決着表示を持ち越さない（再戦準備画面を閉じた時の判定にも使う）
   resetBasesToFixedPositions();
   units.length = 0;
@@ -5043,7 +5072,7 @@ function handleRoomUpdate(snap) {
   if (myRole === "player1" && setup && setup.ready && setup.ready.player1 && setup.ready.player2) {
     update(roomRef, {
       status: "placing", seed: null, placements: null,
-      rematchRequestBy: null, rematchKind: null, rematchSetup: null,
+      rematchRequestBy: null, rematchKind: null, rematchSetup: null, surrender: null,
       mapId: setup.mapId || data.mapId || "classic",
       matchCount: matchCount + 1,
     }).catch(() => {});
@@ -5055,6 +5084,12 @@ function handleRoomUpdate(snap) {
   // placementsでstartBattleFromRoom()が走り、前の試合の最後の戦闘が再生されてしまう（ホスト側だけで発生）。
   // 入れ子の呼び出しで新しいスナップショットを処理済みなら、この古いスナップショットの処理は打ち切る
   if (latestRoomData !== data) return;
+
+  // [UI 2026-09-27] 降参: どちらかが降参していれば試合終了ポップアップを出し、開戦処理には進まない
+  if (data.surrender) {
+    if (!battleMode) showSurrenderResult(data.surrender);
+    return;
+  }
 
   // ホスト側だけが両者ready検出時にseedを発行し開戦させる（書き込み競合を避けるための単独責任）
   if (myRole === "player1" && myReady && opponentReady && data.status !== "battle") {
@@ -5169,7 +5204,7 @@ async function joinRoom(code) {
     guestOnline: true,
     status: data.status === "waiting" || staleMatch ? "placing" : data.status,
     ...(staleMatch ? {
-      seed: null, placements: null, rematchRequestBy: null, rematchKind: null, rematchSetup: null,
+      seed: null, placements: null, rematchRequestBy: null, rematchKind: null, rematchSetup: null, surrender: null,
       matchCount: (data.matchCount || 0) + 1,
     } : {}),
   });
@@ -5192,6 +5227,7 @@ document.getElementById("devSkipLobbyBtn").addEventListener("click", () => {
 });
 document.getElementById("readyBtn").addEventListener("click", () => {
   if (!roomCode) return;
+  if (latestRoomData && latestRoomData.surrender) return; // [UI 2026-09-27] 降参で終了済み
   clearTimeout(placementPushTimer);
   update(ref(db, `rooms/${roomCode}/placements/${myRole}`), { ...myPlacementSnapshot(), ready: true })
     .catch(err => lobbyMsg(`同期に失敗しました: ${err.message}`));
@@ -5262,7 +5298,7 @@ document.getElementById("acceptRematchBtn").addEventListener("click", () => {
     seed: null,
     placements: null,
     rematchRequestBy: null,
-    rematchKind: null, rematchSetup: null, // [UI 2026-09-27]
+    rematchKind: null, rematchSetup: null, surrender: null, // [UI 2026-09-27]
     matchCount: nextMatchCount,
   }).catch(() => {});
 });
@@ -5309,6 +5345,41 @@ function updateMatchResultButtons() {
     acceptBtn.style.display = "none"; cancelBtn.style.display = "none"; statusEl.style.display = "none";
   }
 }
+
+// [UI 2026-09-27] 降参。オンラインはルームに`surrender: 降参した側のrole`を書き込み、両者が
+// handleRoomUpdate()でそれを見て試合終了ポップアップ（勝敗・再戦・ホームに戻る）を出す。
+// オフライン（開発用ローカルテスト）は操作中のプレイヤーの降参として即座に終了ポップアップを出す
+let surrenderHandled = false;
+function showSurrenderResult(loserRole) {
+  if (surrenderHandled) return;
+  surrenderHandled = true;
+  const winner = loserRole === "player1" ? "player2" : "player1";
+  const winnerLabel = winner === "player1" ? "プレイヤー1" : "プレイヤー2";
+  // 再戦準備画面から相手が抜けた時に終了ポップアップへ戻す判定（renderRematchSetup）にも使う
+  shownBattleResult = { text: `降参により試合終了。勝者: ${winnerLabel}`, advanceDisplay: "none" };
+  mode = "idle"; selectedQueueEntry = null; selectedUnitId = null;
+  document.getElementById("shopScrim").classList.remove("open");
+  showStatus(""); // 勝敗は試合終了ポップアップで伝える（上部バーの狭い欄に長文を出すと縦に崩れるため）
+  showMatchResultPopup(winner, "降参");
+}
+document.getElementById("surrenderBtn").addEventListener("click", () => {
+  if (battleMode) return; // 配置画面専用
+  document.getElementById("surrenderScrim").classList.add("open");
+});
+document.getElementById("surrenderCancelBtn").addEventListener("click", () => {
+  document.getElementById("surrenderScrim").classList.remove("open");
+});
+document.getElementById("surrenderScrim").addEventListener("click", (e) => {
+  if (e.target.id === "surrenderScrim") e.currentTarget.classList.remove("open");
+});
+document.getElementById("surrenderConfirmBtn").addEventListener("click", () => {
+  document.getElementById("surrenderScrim").classList.remove("open");
+  if (roomCode && myRole) {
+    update(ref(db, `rooms/${roomCode}`), { surrender: myRole }).catch(err => lobbyMsg(`同期に失敗しました: ${err.message}`));
+  } else {
+    showSurrenderResult(currentPlayer);
+  }
+});
 
 // [UI 2026-09-27] マップ・デッキを変えて再戦の準備画面。ルームのrematchSetup（{mapId, ready:{player1,player2}}）
 // がある間だけ表示する。マップはロビーと同じくホストだけが選べ、デッキは各自が自分の保存済みデッキから選ぶ。
