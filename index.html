@@ -776,6 +776,39 @@
   .deck-edit-msg { font-size: 0.82em; color: #ff9b9b; margin-right: auto; align-self: center; }
   .deck-edit-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 18px 16px; }
   .hcard.deck-pick { cursor: pointer; }
+  /* [UI 2026-09-29] UC報告「スマホで見るとデッキ構築画面がごみ」。スマホ幅では左の選択中リスト(220px固定)が
+     半分以上を占め、一覧が1列＋画面外にはみ出していた。全画面表示にし、選択中12体は上部に顔アイコンの
+     6列グリッド（タップで外す）、一覧は2列にする */
+  @media (max-width: 640px) {
+    #deckEditScrim { padding: 0; }
+    .deck-edit-modal { width: 100%; height: 100%; max-height: none; border-radius: 0; border: none; }
+    .deck-edit-modal .shop-modal-head { padding: 10px 12px; gap: 8px; }
+    .deck-edit-body { flex-direction: column; }
+    .deck-edit-selected-list {
+      width: auto; overflow: visible; padding: 8px 12px 10px; border-right: none; border-bottom: 1px solid var(--panel-border);
+      display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px;
+    }
+    .deck-edit-selected-list-title, .deck-edit-selected-empty { grid-column: 1 / -1; padding: 0; }
+    .deck-edit-selected-row { padding: 0; position: relative; }
+    .deck-edit-selected-row .h-icon { width: 100%; height: auto; aspect-ratio: 1; border-radius: 8px; }
+    .deck-edit-selected-row .deck-edit-selected-idx, .deck-edit-selected-row .deck-edit-selected-name { display: none; }
+    .deck-edit-selected-row .deck-edit-selected-remove {
+      position: absolute; top: -4px; right: -4px; width: 16px; height: 16px; border-radius: 50%;
+      background: #3a3f4d; color: #ddd; font-size: 0.6em; display: flex; align-items: center; justify-content: center;
+    }
+    .deck-edit-body .shop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 12px 14px; }
+    .deck-edit-body .h-banner { height: 104px; }
+    .deck-edit-body .h-price { font-size: 0.4em; top: 6px; right: 6px; }
+    .deck-edit-body .h-body { padding: 6px 8px 8px; }
+    #deckEditScrim .deck-edit-actions { padding: 8px 12px calc(10px + env(safe-area-inset-bottom)); }
+    #deckEditScrim .deck-edit-actions button { flex: 1; }
+    /* デッキ一覧画面も、枠の二重余白を詰めてデッキ名が切れないようにする */
+    #deckScreen { padding: 12px 10px 24px; }
+    #deckScreen .lobby-hexfield { padding: 28px 12px 20px; }
+    #deckScreen .lobby-brand { margin-bottom: 18px; }
+    #deckScreen .lobby-card { padding: 14px 12px; }
+    #deckScreen .deck-slot-card { padding: 12px; gap: 10px; }
+  }
 </style>
 </head>
 <body>
@@ -1423,7 +1456,7 @@ function renderDeckEditSelectedList() {
     row.className = "deck-edit-selected-row";
     row.innerHTML =
       `<span class="deck-edit-selected-idx">${i}</span>` +
-      `<div class="h-icon">${charFallbackTag(char.id)}${charImageTag(char.id)}</div>` +
+      `<div class="h-icon">${charFallbackTag(char.id)}<img class="h-icon-img" src="${charFaceSrc(char.id)}" alt="" onerror="${IMG_FALLBACK_ONERROR}"></div>` +
       `<span class="deck-edit-selected-name">${charNameHtml(char)}</span>` +
       `<span class="deck-edit-selected-remove">✕</span>`;
     row.title = charFullName(char);
