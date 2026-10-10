@@ -237,6 +237,12 @@
   }
   .surrender-confirm-btn:hover { filter: brightness(1.08); }
   #readyRow { align-items: center; gap: 10px; } /* [UI 2026-09-05] 配置完了は残クレジットとHPバーの間に配置 */
+  /* [UI 2026-10-11] .placement-dockはスマホ幅でボタンを下にまとめるための入れ物。パソコン幅では
+     中身をtopbarの並びにそのまま出し、従来どおり「…全軍突撃・残クレジット・購入」の順に並べる */
+  .placement-dock { display: contents; }
+  .placement-topbar .credits-pill { order: 1; }
+  .placement-dock #openShopBtn { order: 2; }
+  .hcard .h-mini { display: none; }
 
   .scrim {
     position: fixed; inset: 0; background: rgba(10,11,14,0.72); backdrop-filter: blur(2px);
@@ -809,6 +815,97 @@
     #deckScreen .lobby-card { padding: 14px 12px; }
     #deckScreen .deck-slot-card { padding: 12px; gap: 10px; }
   }
+  /* [UI 2026-10-11] UC選択「案A: 縦に積む」。スマホ幅の配置画面を
+     上から「情報（ラウンド・拠点HP・案内）→ 盤面（全体が見える幅）→ 手持ち（顔アイコン）→ 選んだキャラ」と並べ、
+     押すボタン（降参・全軍突撃・購入・配置完了）は画面下に固定してまとめる。パソコン幅の見た目は変えない */
+  @media (max-width: 640px) {
+    body:has(#layoutRoot[style*="flex"]) { padding: 0; }
+    #pageHeader { display: none !important; }
+    #layoutRoot { width: 100%; }
+    #layoutRoot .screen-view { width: 100%; border: none; border-radius: 0; }
+
+    #placementScreen:not([style*="none"]) { display: flex; flex-direction: column; padding-bottom: 132px; background: var(--panel); }
+    #placementScreen .dev-toggle-wrap { display: none; }
+    #placementScreen .placement-body { display: contents; }
+    #placementScreen .placement-topbar { order: 1; }
+    #placementScreen .col-board { order: 2; }
+    #placementScreen .strip.top { order: 3; }
+    #placementScreen .inspector-strip { order: 4; }
+    #placementScreen .placement-actionbar { order: 5; }
+    #onlineBattleNote { display: none !important; }
+
+    /* 上部: 1行目=ラウンド・マップ・残クレジット、2行目=拠点HP（自分/相手を2段）、3行目=案内文 */
+    .placement-topbar { gap: 6px; padding: 10px 12px 0; }
+    .placement-topbar .round-pill { font-size: 0.74em; padding: 3px 10px; }
+    .placement-topbar .credits-pill { margin-left: auto; font-size: 0.8em; padding: 3px 12px; }
+    .placement-topbar .credits-word { display: none; }
+    .placement-topbar .base-hp-group {
+      order: 2; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; margin-top: 2px;
+    }
+    .placement-topbar .base-hp .bar { flex: 1; width: auto; }
+    .placement-topbar .placement-status-msg {
+      order: 3; flex: none; width: calc(100% + 24px); margin: 4px -12px 0; padding: 7px 12px; text-align: left;
+      background: rgba(255,212,121,0.08); border-top: 1px solid var(--panel-border); min-height: 2.4em; line-height: 1.5;
+    }
+    .placement-topbar .placement-status-msg:empty { display: none; }
+
+    /* 盤面: 画面幅いっぱいで全体が見える大きさ（applyBoardZoom()で幅に合わせる）。ズームボタンは盤面の上に出す */
+    #placementScreen .col-board { display: block; padding: 6px 4px 8px; background: var(--bg); }
+    #placementScreen .col-board #board { display: block; margin: 0 auto; }
+    #placementScreen .board-zoom-controls { position: static; justify-content: flex-end; margin: 0 4px 6px; width: fit-content; margin-left: auto; }
+    #placementScreen .board-zoom-controls button { width: 32px; height: 30px; }
+    #placementScreen .board-zoom-controls .board-overview-btn { width: auto; padding: 0 10px; white-space: nowrap; }
+    #placementScreen .board-zoom-controls .board-zoom-reset { display: none; }
+
+    /* 手持ち: カードを顔アイコンだけの小さい形にする（.h-mini、renderQueueList()で生成） */
+    #placementScreen .strip.top { flex-direction: row; align-items: center; padding: 10px 12px 14px; border-top: 1px solid var(--panel-border); }
+    #placementScreen .strip-label { width: auto; font-size: 0.68em; }
+    #placementScreen .strip-track { gap: 12px; padding: 2px 2px 10px; }
+    #placementScreen .hcard { width: 56px; background: none; border: none; box-shadow: none; opacity: 1; }
+    #placementScreen .hcard .h-banner, #placementScreen .hcard .h-body { display: none; }
+    #placementScreen .hcard .h-mini { display: block; position: relative; }
+    .h-mini-face {
+      width: 56px; height: 56px; border-radius: 10px; overflow: hidden; border: 2px solid transparent;
+      background: linear-gradient(180deg, #4a8fd8, #2b5fa0);
+    }
+    .h-mini-face.p2 { background: linear-gradient(180deg, #d9574a, #8a2c2c); }
+    .h-mini-face img { width: 100%; height: 100%; display: block; }
+    .hcard.queued .h-mini-face { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,212,121,0.25); }
+    .hcard.placed .h-mini-face { opacity: 0.55; }
+    .hcard.selected .h-mini-face { border-color: #fff; box-shadow: 0 0 0 3px var(--accent); opacity: 1; }
+    .h-mini-tag {
+      position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%); white-space: nowrap;
+      font-size: 0.56em; font-weight: 700; border-radius: 6px; padding: 0 5px; background: #3a3f4d; color: #ddd;
+    }
+    .hcard.queued .h-mini-tag { background: var(--accent); color: #2a1e05; }
+    .h-mini-return {
+      position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; padding: 0;
+      background: #3a3f4d; color: #ddd; border: 1px solid #555c6d; font-size: 0.62em; line-height: 1;
+    }
+    #placementScreen .strip-divider { margin: 0 2px; }
+
+    /* 選んだキャラ（指示パネル）と相手のデッキ */
+    #placementScreen .inspector-strip { max-height: none; border-left: none; border-top: 1px solid var(--panel-border); flex: 1;
+      display: flex; flex-direction: column; gap: 12px; }
+    #placementScreen .inspector-strip #unitEditContent { order: 1; } /* 選んだキャラを先に、相手のデッキはその下 */
+    #placementScreen .inspector-strip #oppDeckPlacement { order: 2; }
+
+    /* 画面下のボタン: 1段目=降参・全軍突撃・購入、2段目=配置完了 */
+    .placement-dock {
+      display: grid; grid-template-columns: 46px 1fr 1fr; gap: 8px;
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+      padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+      background: var(--panel); border-top: 1px solid var(--panel-border); box-shadow: 0 -8px 24px rgba(0,0,0,0.35);
+    }
+    .placement-dock > button { height: 44px; border-radius: 10px; font-size: 0.86em; padding: 0 8px; }
+    .placement-dock #openShopBtn { order: 0; background: rgba(255,212,121,0.14); color: var(--accent); border: 1px solid var(--accent); box-shadow: none; }
+    .placement-dock .surrender-btn .dock-label { display: none; }
+    .placement-dock #readyRow { grid-column: 1 / -1; order: 9; flex-wrap: wrap; gap: 8px; }
+    .placement-dock #readyBtn { flex: 1; height: 46px; font-size: 1em; border-radius: 10px; }
+    .placement-dock #cancelReadyBtn { height: 46px; }
+    .placement-dock #readyStatusLabel:empty { display: none; }
+    .placement-dock #readyStatusLabel { width: 100%; text-align: center; font-size: 0.78em; }
+  }
 </style>
 </head>
 <body>
@@ -1126,15 +1223,19 @@
       <span class="round-pill" id="mapNameLabel" title="このルームで使用中のマップ"></span>
       <div class="base-hp-group" id="baseHpGroup"></div>
       <span id="statusMsg" class="placement-status-msg"></span>
-      <span id="readyRow" style="display:none;">
-        <button id="readyBtn" class="btn-primary-lg">配置完了（準備OK）</button>
-        <button id="cancelReadyBtn" class="ready-cancel-btn" style="display:none;">キャンセル</button>
-        <span id="readyStatusLabel" class="status-line"></span>
-      </span>
-      <button id="surrenderBtn" type="button" class="surrender-btn" title="この試合を降参して終了します">🏳 降参</button>
-      <button id="rushAllBtn" type="button" class="rush-cta-topbar" title="配置済みの自分の全キャラの指示を「相手拠点へ突撃」に一括変更します">🚩 全軍突撃</button>
-      <div class="credits-pill">残クレジット <span class="amt" id="creditsLabel"></span></div>
-      <button id="openShopBtn" class="shop-cta-topbar">＋ キャラを購入</button>
+      <!-- [UI 2026-10-11] スマホ幅では押すボタンを画面下にまとめる（案A）ための入れ物。パソコン幅では
+           display:contentsで中身がそのままtopbarの並びに入るので見た目は変わらない -->
+      <div class="placement-dock">
+        <span id="readyRow" style="display:none;">
+          <button id="readyBtn" class="btn-primary-lg">配置完了（準備OK）</button>
+          <button id="cancelReadyBtn" class="ready-cancel-btn" style="display:none;">キャンセル</button>
+          <span id="readyStatusLabel" class="status-line"></span>
+        </span>
+        <button id="surrenderBtn" type="button" class="surrender-btn" title="この試合を降参して終了します">🏳 <span class="dock-label">降参</span></button>
+        <button id="rushAllBtn" type="button" class="rush-cta-topbar" title="配置済みの自分の全キャラの指示を「相手拠点へ突撃」に一括変更します">🚩 全軍突撃</button>
+        <button id="openShopBtn" class="shop-cta-topbar">＋ キャラを購入</button>
+      </div>
+      <div class="credits-pill">残<span class="credits-word">クレジット</span> <span class="amt" id="creditsLabel"></span></div>
     </div>
 
     <div class="strip top">
@@ -2947,9 +3048,16 @@ svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
 // スロット間を移動）ため、両画面のズームボタンから同じ関数を呼べるようclassでまとめて拾う
 let boardZoom = 1;
 const BOARD_ZOOM_MIN = 0.6, BOARD_ZOOM_MAX = 2.6, BOARD_ZOOM_STEP = 0.2;
+// [UI 2026-10-11] スマホ幅（案A）では、100%のときに盤面全体が画面幅に収まるよう基準の大きさを縮める
+const mobileLayoutMql = window.matchMedia("(max-width: 640px)");
+function boardFitScale() {
+  if (!mobileLayoutMql.matches) return 1;
+  return Math.min(1, (window.innerWidth - 8) / svgW);
+}
 function applyBoardZoom() {
-  svg.setAttribute("width", (svgW * boardZoom).toFixed(0));
-  svg.setAttribute("height", (svgH * boardZoom).toFixed(0));
+  const scale = boardZoom * boardFitScale();
+  svg.setAttribute("width", (svgW * scale).toFixed(0));
+  svg.setAttribute("height", (svgH * scale).toFixed(0));
   document.querySelectorAll(".board-zoom-label").forEach(el => { el.textContent = `${Math.round(boardZoom * 100)}%`; });
 }
 function zoomBoardBy(delta) {
@@ -2959,6 +3067,8 @@ function zoomBoardBy(delta) {
 document.querySelectorAll(".board-zoom-in").forEach(b => b.addEventListener("click", () => zoomBoardBy(BOARD_ZOOM_STEP)));
 document.querySelectorAll(".board-zoom-out").forEach(b => b.addEventListener("click", () => zoomBoardBy(-BOARD_ZOOM_STEP)));
 document.querySelectorAll(".board-zoom-reset").forEach(b => b.addEventListener("click", () => { boardZoom = 1; applyBoardZoom(); }));
+window.addEventListener("resize", applyBoardZoom);
+applyBoardZoom();
 
 // [UC要望 2026-09-16] 押している間だけ表示、からON/OFFの切り替えボタンに変更。OFF時は選択中のキャラだけ
 // フル表示（従来通り）、ON時は選択していない自分のキャラの指示線も薄く常時表示する
@@ -3556,6 +3666,15 @@ function renderCharList() {
 // [UI 2026-08-23] 配置待ち（未配置）カードを目立たせつつ、配置済みキャラも記録として並べて表示する。
 // UC指摘: 「購入して配置したら上から消えてしまう。配置済みのキャラも記載してほしい。配置していない
 // キャラはハイライトとかで目立たせること」への対応
+// [UI 2026-10-11] スマホ幅の配置画面（案A）で使う、手持ちカードの顔アイコンだけの小さい形。
+// パソコン幅ではCSSで非表示（.hcard .h-mini）。未配置のカードには返却用の小さな✕を付ける
+function queueMiniHtml(char, owner, tag, withReturn) {
+  return `<div class="h-mini"><div class="h-mini-face${owner === "player2" ? " p2" : ""}">` +
+    `<img src="${charFaceSrc(char.id)}" alt="${char.name}" onerror="this.src='${charImageSrc(char.id)}'"></div>` +
+    (tag ? `<span class="h-mini-tag">${tag}</span>` : "") +
+    (withReturn ? `<button type="button" class="h-mini-return" title="返却（クレジットを返金）">✕</button>` : "") +
+    `</div>`;
+}
 function renderQueueList() {
   const container = document.getElementById("queueList");
   container.innerHTML = "";
@@ -3578,13 +3697,14 @@ function renderQueueList() {
       `<div class="skill-pills">${skillPillsHtml(char.skills)}</div>` +
       `<div class="h-hint">盤面をクリックで配置 →</div>` +
       `<button type="button" class="h-return-btn">返却</button>` +
-      `</div>`;
+      `</div>` +
+      queueMiniHtml(char, currentPlayer, "未配置", true);
     card.title = allSkillsTooltip(char.skills);
     card.addEventListener("click", () => selectQueueEntry(currentPlayer, entry.qid));
-    card.querySelector(".h-return-btn").addEventListener("click", (e) => {
+    card.querySelectorAll(".h-return-btn, .h-mini-return").forEach(btn => btn.addEventListener("click", (e) => {
       e.stopPropagation();
       returnQueuedUnit(currentPlayer, entry.qid);
-    });
+    }));
     container.appendChild(card);
   }
   if (queuedList.length > 0 && placedList.length > 0) {
@@ -3604,7 +3724,8 @@ function renderQueueList() {
       statBarsHtml(char) +
       `<div class="skill-pills">${skillPillsHtml(char.skills)}</div>` +
       `<div class="h-hint">配置済み・${PURPOSE_SHORT[unit.purpose] || ""}</div>` +
-      `</div>`;
+      `</div>` +
+      queueMiniHtml(char, unit.owner, PURPOSE_SHORT[unit.purpose] || "", false);
     card.title = allSkillsTooltip(char.skills);
     card.addEventListener("click", () => selectUnitForEdit(unit.id));
     container.appendChild(card);
@@ -3623,7 +3744,7 @@ function renderUnitEditPanel() {
   // 戦闘画面（.battle-side）は常にログパネルが表示され続けるのに対し、配置画面はユニット未選択時に
   // パネルごと非表示にしていたため、盤面が全幅表示に見えていた。パネル自体は常に表示したままにし、
   // 未選択時はプレースホルダー文言を出すことで、戦闘画面と同じ「盤面＋常時右パネル」の見た目に揃えた
-  panel.style.display = "block";
+  panel.style.display = ""; // [UI 2026-10-11] "block"固定だとスマホ幅の並べ替え（CSSのflex）が効かないため空にする（パソコン幅では従来どおりblock）
   if (!unit) {
     content.innerHTML = `<div class="hint">キャラを選択すると、ここに指示・向きの設定が表示されます。</div>`;
     return;
@@ -4788,7 +4909,7 @@ function exitBattleMode() {
 
 // [UI] 配置フェイズ画面／戦闘画面の排他表示（2026-08-22: 画面分割）
 function showPlacementScreen() {
-  document.getElementById("placementScreen").style.display = "block";
+  document.getElementById("placementScreen").style.display = ""; // [UI 2026-10-11] "block"固定だとスマホ幅のflex並べ替え（CSS）が効かないため
   document.getElementById("battleScreen").style.display = "none";
 }
 function showBattleScreen() {
