@@ -154,10 +154,11 @@
   .char-role { font-size: 0.72em; font-weight: 400; opacity: 0.6; margin-left: 3px; letter-spacing: -0.03em; }
   /* 選択中リストは幅が狭いので、入りきらない役職は丸ごと次の行へ回す */
   .deck-edit-selected-row .char-role { display: inline-block; white-space: nowrap; }
-  .hcard .h-price {
-    position: absolute; top: 8px; right: 8px; font-size: 0.72em; color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 700;
-    background: rgba(20,22,27,0.72); border-radius: 999px; padding: 2px 8px;
-  }
+  /* [UI 2026-10-11] UC要望F「カードの値段が絵に被る」→ dailiesで案A。値段を絵の上から外し、
+     名前と同じ行の右端に置く（旧: バナー右上の丸札。バナーの大きいfont-sizeを継承して大きくなっていた） */
+  .h-name-row { display: flex; align-items: baseline; gap: 6px; }
+  .h-name-row .h-name { min-width: 0; }
+  .hcard .h-price { margin-left: auto; flex-shrink: 0; font-size: 0.86em; color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 700; }
   /* [UI 2026-09-05] ステータスを平行四辺形の目盛りバーで表示（UC提示の参考画像に準拠）。
      目盛り数は全キャラ中の最大値を満タンとした相対値なので、キャラ間で強さの比較がしやすい */
   .stat-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
@@ -804,7 +805,6 @@
     }
     .deck-edit-body .shop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 12px 14px; }
     .deck-edit-body .h-banner { height: 104px; }
-    .deck-edit-body .h-price { font-size: 0.4em; top: 6px; right: 6px; }
     .deck-edit-body .h-body { padding: 6px 8px 8px; }
     #deckEditScrim .deck-edit-actions { padding: 8px 12px calc(10px + env(safe-area-inset-bottom)); }
     #deckEditScrim .deck-edit-actions button { flex: 1; }
@@ -1527,8 +1527,8 @@ function renderDeckEditGrid() {
     card.innerHTML =
       // [バグ修正 2026-09-19] UC報告「デッキ選択画面で購入金額が分からない」。ショップカードと同じ
       // .h-priceバッジをバナーに追加（値段自体は元々char.priceに保持済みで、表示していなかっただけ）
-      `<div class="h-banner">${charFallbackTag(char.id)}${charImageTag(char.id)}<span class="h-price">${char.price}cr</span></div>` +
-      `<div class="h-body"><div class="h-name">${charNameHtml(char)}</div>` +
+      `<div class="h-banner">${charFallbackTag(char.id)}${charImageTag(char.id)}</div>` +
+      `<div class="h-body"><div class="h-name-row"><div class="h-name">${charNameHtml(char)}</div><span class="h-price">${char.price}cr</span></div>` +
       statBarsHtml(char) +
       `<div class="skill-pills">${skillPillsHtml(char.skills)}</div></div>`;
     card.title = allSkillsTooltip(char.skills);
@@ -3651,9 +3651,9 @@ function renderCharList() {
     const card = document.createElement("div");
     card.className = "hcard" + (affordable ? "" : " unaffordable");
     card.innerHTML =
-      `<div class="h-banner${currentPlayer === "player2" ? " p2" : ""}">${charFallbackTag(char.id)}${charImageTag(char.id)}<span class="h-price">${char.price}cr</span></div>` +
+      `<div class="h-banner${currentPlayer === "player2" ? " p2" : ""}">${charFallbackTag(char.id)}${charImageTag(char.id)}</div>` +
       `<div class="h-body">` +
-      `<div class="h-name">${charNameHtml(char)}</div>` +
+      `<div class="h-name-row"><div class="h-name">${charNameHtml(char)}</div><span class="h-price">${char.price}cr</span></div>` +
       statBarsHtml(char) +
       `<div class="skill-pills">${skillPillsHtml(char.skills)}</div>` +
       `</div>`;
