@@ -861,9 +861,11 @@
     #placementScreen .strip.top { flex-direction: row; align-items: center; padding: 10px 12px 14px; border-top: 1px solid var(--panel-border); }
     #placementScreen .strip-label { width: auto; font-size: 0.68em; }
     #placementScreen .strip-track { gap: 12px; padding: 2px 2px 10px; }
-    #placementScreen .hcard { width: 56px; background: none; border: none; box-shadow: none; opacity: 1; }
-    #placementScreen .hcard .h-banner, #placementScreen .hcard .h-body { display: none; }
-    #placementScreen .hcard .h-mini { display: block; position: relative; }
+    /* [バグ修正 2026-10-11] UC報告「スマホで購入画面にキャラが出てこない」。当初 #placementScreen .hcard で
+       指定していたため、同じ画面内の購入ポップアップ(#charList)のカードまで絵・本文が消えていた。手持ち欄だけに限定 */
+    #queueList .hcard { width: 56px; background: none; border: none; box-shadow: none; opacity: 1; }
+    #queueList .hcard .h-banner, #queueList .hcard .h-body { display: none; }
+    #queueList .hcard .h-mini { display: block; position: relative; }
     .h-mini-face {
       width: 56px; height: 56px; border-radius: 10px; overflow: hidden; border: 2px solid transparent;
       background: linear-gradient(180deg, #4a8fd8, #2b5fa0);
