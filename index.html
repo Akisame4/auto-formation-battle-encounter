@@ -1042,7 +1042,7 @@
       <p>ヘックス（六角形）の盤面で戦う<b>オートバトラー</b>です。キャラを買って配置し、指示を出したら、あとは<b>戦闘が自動で進みます</b>。オンラインで2人対戦するほか、ロビーの「CPUと対戦」でひとりでも遊べます。</p>
       <ul>
         <li>試合は全<b>4ラウンド</b>。各ラウンドは「<b>配置フェイズ</b>（買う・置く・指示を出す）」→「<b>戦闘フェイズ</b>（自動で戦う）」の順に進みます</li>
-        <li>盤面の<span class="p1-text">上側（青）がプレイヤー1</span>、<span class="p2-text">下側（赤）がプレイヤー2</span>の陣地、真ん中は<b>中立地帯</b>です。各プレイヤーは<b>拠点を2つ</b>（HP300ずつ）持っています</li>
+        <li>盤面の<span class="p1-text">上側（青）がプレイヤー1</span>、<span class="p2-text">下側（赤）がプレイヤー2</span>の陣地、真ん中は<b>中立地帯</b>です。各プレイヤーは<b>拠点を2つ</b>（HP800ずつ）持っています</li>
         <li>黒いマスは<b>壁</b>です。通れず、射撃や遠くへの攻撃もさえぎります</li>
         <li>キャラのHP・位置、罠などは次のラウンドに<b>引き継がれます</b>。行動力は毎ラウンド回復します</li>
       </ul>
@@ -1804,6 +1804,10 @@ function inBounds(col, row) { return col >= 0 && col < COLS && row >= 0 && row <
 // [2026-09-20] UC要望「拠点を一つ後ろに下げる」。P1: row3→row2／P2: row15→row16（180度対称維持。
 // 両マップ共通の定数なので両方に反映される）。row2/16はWALLS_HALF・MAP2_WALLS_TOPいずれとも
 // 衝突しないことを確認済み
+// [バランス調整 2026-10-12] 拠点HP 300→800。UC「R1・R2で陣形を組み、R3・R4でダメージの優位を取って決着、
+// という流れにしたい」。CPUどうしの自動対戦（各150試合、連携攻撃を拠点に乗せない前提）でR2までに決着する割合が
+// 300=80%（連携あり）→500=56%→600=49%→800=29%。dailiesでUCが800を選択
+const BASE_MAX_HP = 800;
 const FIXED_BASES = {
   player1: [{ col: 5, row: 2 }, { col: 14, row: 2 }],
   player2: [{ col: 5, row: 16 }, { col: 14, row: 16 }],
@@ -1970,8 +1974,8 @@ function statBarsHtml(char) {
 // 末尾のN（射撃5・攻撃消費2等）は実際の数値に置き換えて表示する
 const SKILL_DESCRIPTIONS = {
   "追従": "Nマス以内の味方キャラが移動するたび、行動力消費なしで移動する（1戦闘フェイズに5回まで）",
-  "近接連携攻撃": "自分の攻撃範囲にいる敵キャラを味方の誰かが攻撃した時、行動力消費なしで自身の攻撃力分の追加攻撃をする",
-  "遠距離連携攻撃": "自分の攻撃範囲にいる敵キャラを味方の誰かが攻撃した時、行動力消費なしで自身の攻撃力の半分で追加攻撃をする",
+  "近接連携攻撃": "自分の攻撃範囲にいる敵キャラを味方の誰かが攻撃した時、行動力消費なしで自身の攻撃力分の追加攻撃をする（拠点への攻撃では発動しない）",
+  "遠距離連携攻撃": "自分の攻撃範囲にいる敵キャラを味方の誰かが攻撃した時、行動力消費なしで自身の攻撃力の半分で追加攻撃をする（拠点への攻撃では発動しない）",
   "移動ボーナス": "1回の行動消費でNマス移動できる",
   "無双": "このキャラが敵キャラを倒した時、行動力が3回復する",
   "罠設置": "このキャラが通ったマスに罠を設置。罠マスの上で敵キャラが行動するたび行動力を追加で1消費させる",
@@ -2282,7 +2286,7 @@ function findPath(start, goal, isBlocked) {
 
 function initBattleState(unitsInput, basesInput, options) {
   const opts = options || {};
-  const baseHp = opts.baseHp || 300;
+  const baseHp = opts.baseHp || BASE_MAX_HP;
   const bases = [];
   let baseSeq = 0;
   for (const owner of ["player1", "player2"]) {
@@ -2596,7 +2600,9 @@ function triggerLinkedAttacks(state, attacker, hitTargets, rng, log, tick) {
     const hasMelee = allyChar.skills.includes("近接連携攻撃");
     const hasRanged = allyChar.skills.includes("遠距離連携攻撃");
     if (!hasMelee && !hasRanged) continue;
-    const inRangeTarget = hitTargets.find(t => t.alive && isInAttackRange(ally, { col: t.col, row: t.row }));
+    // [バランス調整 2026-10-12] 連携攻撃は拠点には乗らない（UC指示）。ランカ3体が拠点に並ぶと1攻撃60ダメージになり、
+    // R1から拠点へ一点特攻するだけで勝てていた（自動対戦でCPUに76%→対策後31%）
+    const inRangeTarget = hitTargets.find(t => t.alive && !t.isBase && isInAttackRange(ally, { col: t.col, row: t.row }));
     if (!inRangeTarget) continue;
     const dmg = hasMelee ? allyChar.atk : Math.floor(allyChar.atk / 2);
     log.push({ tick, type: "linkedAttack", unitId: ally.id, targetId: inRangeTarget.id, skill: hasMelee ? "近接連携攻撃" : "遠距離連携攻撃" });
@@ -3519,7 +3525,7 @@ function render() {
       const label = el("text", { x, y: y + 4, "text-anchor": "middle", fill: "#fff", "font-size": "10", "font-weight": "bold", "pointer-events": "none" });
       label.textContent = "拠";
       gMarkers.append(circle, label);
-      appendMarkerHpBar(x, y, b.hp != null ? b.hp : 300, 300); // [UI 2026-09-06] 前ラウンドで削れた拠点HPを配置画面でも見えるように
+      appendMarkerHpBar(x, y, b.hp != null ? b.hp : BASE_MAX_HP, BASE_MAX_HP); // [UI 2026-09-06] 前ラウンドで削れた拠点HPを配置画面でも見えるように
     }
   }
 
@@ -3614,7 +3620,7 @@ function render() {
   pushMyPlacement(); // [P5] ルーム参加中のみ、自分側の配置状態をFirebaseへ反映（未参加時・戦闘中は何もしない）
 }
 
-// [UI] 拠点HPバー。拠点は各プレイヤー常に最大2個・1個300HP（設計書§2）が前提。
+// [UI] 拠点HPバー。拠点は各プレイヤー常に最大2個・1個BASE_MAX_HP（設計書§2）が前提。
 // [UI 2026-09-19] UC要望「上の拠点HP表示を2つに分けよう(300,300で)」に対応。従来は2個の拠点HPを
 // 合算して1本（600/600）で表示していたが、拠点ごとに別々のバーで表示するように変更した。
 // `getBasesForOwner(owner)`にその陣営の拠点配列を渡すだけの汎用関数にして、配置画面(bases)・
@@ -3624,8 +3630,8 @@ function baseHpGroupHtml(getBasesForOwner) {
     const tag = p === "player1" ? "p1" : "p2";
     const label = p === "player1" ? "P1" : "P2";
     return getBasesForOwner(p).map((b, i) => {
-      const cur = b.hp != null ? b.hp : 300;
-      const max = 300;
+      const cur = b.hp != null ? b.hp : BASE_MAX_HP;
+      const max = BASE_MAX_HP;
       const pct = Math.max(0, Math.min(100, (cur / max) * 100));
       return `<div class="base-hp ${tag}"><span class="label">${label}-${i + 1}</span><span class="bar"><i style="width:${pct}%"></i></span><span class="n">${cur}/${max}</span></div>`;
     }).join("");
@@ -5973,7 +5979,7 @@ function cpuPickTarget(owner, opts) {
   for (const b of bases[enemy]) {
     if (b.hp != null && b.hp <= 0) continue;
     const near = enemyUnits.filter(u => hexDistance(u, b) <= opts.guardRadius + 1).length;
-    const hp = b.hp != null ? b.hp : 300;
+    const hp = b.hp != null ? b.hp : BASE_MAX_HP;
     const score = near * opts.nearWeight + hp + Math.random() * opts.targetNoise;
     if (score < bestScore) { bestScore = score; best = b; }
   }
